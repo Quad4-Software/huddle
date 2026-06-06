@@ -38,6 +38,7 @@ FROM cgr.dev/chainguard/static@sha256:77d8b8925dc27970ec2f48243f44c7a260d52c49cd
 COPY --from=go-builder /out/huddle /usr/bin/huddle
 
 EXPOSE 8080
+EXPOSE 3478/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/usr/bin/huddle", "healthcheck"]

@@ -7,9 +7,12 @@ services:
     restart: unless-stopped
     environment:
       HUDDLE_INVITE_SECRET: ${HUDDLE_INVITE_SECRET:?set HUDDLE_INVITE_SECRET in .env}
-      HUDDLE_TRUST_PROXY: ${HUDDLE_TRUST_PROXY:-true}
+      HUDDLE_TRUST_PROXY: ${HUDDLE_TRUST_PROXY:-false}
+      HUDDLE_TURN_ENABLED: ${HUDDLE_TURN_ENABLED:-false}
+      HUDDLE_TURN_PUBLIC_ADDR: ${HUDDLE_TURN_PUBLIC_ADDR:-}
     ports:
       - "${HUDDLE_PORT:-8080}:8080"
+      - "${HUDDLE_TURN_PORT:-3478}:3478/udp"
     security_opt:
       - no-new-privileges:true
     cap_drop:

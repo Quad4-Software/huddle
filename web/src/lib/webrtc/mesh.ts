@@ -90,6 +90,14 @@ export class Mesh {
     return this.channels.size === 0;
   }
 
+  hasVoiceReady(): boolean {
+    if (this.channels.size === 0) return true;
+    for (const [, pc] of this.peers) {
+      if (pc.connectionState === 'connected') return true;
+    }
+    return this.hasOpenChannels();
+  }
+
   async addLocalAudio(stream: MediaStream) {
     this.localStream = stream;
     for (const [, pc] of this.peers) {
@@ -230,6 +238,7 @@ export class Mesh {
         return;
       }
       this.events.onPeerConnected(peerId, connected);
+      if (connected) this.events.onMeshReady();
     };
   }
 

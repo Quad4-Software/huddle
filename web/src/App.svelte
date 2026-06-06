@@ -4,7 +4,9 @@
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import LoadingScreen from './lib/components/LoadingScreen.svelte';
   import ConnectionLost from './lib/components/ConnectionLost.svelte';
+  import UpdateBanner from './lib/components/UpdateBanner.svelte';
   import { session } from './lib/stores/session.svelte';
+  import { setPwaInSession } from './lib/pwa-update.svelte';
   import { loading } from './lib/stores/loading.svelte';
   import { connection } from './lib/stores/connection.svelte';
   import { joinFromUrl } from './lib/session-controller';
@@ -51,6 +53,10 @@
     }
   });
 
+  $effect(() => {
+    setPwaInSession(session.connected && !!session.room);
+  });
+
   function openSettings() {
     showSettings = true;
   }
@@ -76,7 +82,7 @@
   <meta name="twitter:description" content={seoDescription} />
 </svelte:head>
 
-{#if booting || loading.active}
+{#if (booting || loading.active) && !(session.connected && session.room)}
   <LoadingScreen />
 {:else if session.room && connection.status !== 'online'}
   <ConnectionLost />
@@ -89,3 +95,5 @@
 {#if showSettings}
   <SettingsModal onClose={closeSettings} />
 {/if}
+
+<UpdateBanner inSession={session.connected && !!session.room} />

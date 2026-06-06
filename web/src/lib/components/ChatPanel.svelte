@@ -107,6 +107,8 @@
 
 <div
   class="relative flex h-full flex-col"
+  role="region"
+  aria-label="Chat"
   ondragenter={onDragEnter}
   ondragleave={onDragLeave}
   ondragover={onDragOver}

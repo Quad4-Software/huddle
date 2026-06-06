@@ -9,6 +9,7 @@ import { session } from './stores/session.svelte';
 import { settings, voiceActivationThreshold } from './stores/settings.svelte';
 import { loading } from './stores/loading.svelte';
 import { connection } from './stores/connection.svelte';
+import { applyPendingUpdate, setPwaInSession } from './pwa-update.svelte';
 import { buildInviteUrl } from './invite';
 import { randomDisplayName } from './random-name';
 import { solvePow } from './pow';
@@ -42,6 +43,7 @@ let meshPeerId: string | null = null;
 let intentionalLeave = false;
 let reconnecting = false;
 let reconnectAbort = false;
+let urlJoinInFlight: Promise<boolean> | null = null;
 const audioMonitor = new AudioLevelMonitor();
 
 function registerVoiceStream(peerId: string, stream: MediaStream) {
@@ -67,6 +69,7 @@ function applyJoinedState(peerId: string, room: RoomState, resumeToken?: string)
   session.connected = true;
   session.error = '';
   connection.setOnline();
+  setPwaInSession(true);
   sessionStorage.setItem(peerResumeKey(room.id), peerId);
   if (resumeToken) {
     sessionStorage.setItem(peerResumeTokenKey(room.id), resumeToken);
@@ -111,8 +114,11 @@ function wireSignaling() {
 
     applyJoinedState(p.peerId, p.room, p.resumeToken);
     const peers = Array.isArray(p.peers) ? p.peers : [];
+    if (!reconnecting) loading.stop();
+    session.meshReady = peers.length === 0;
 
     if (meshPeerId === p.peerId && mesh) {
+      session.meshReady = mesh.hasVoiceReady();
       return;
     }
 
@@ -171,7 +177,7 @@ function wireSignaling() {
           session.setPeerOnline(peerId, connected);
         },
         onMeshReady: () => {
-          session.meshReady = mesh?.hasOpenChannels() ?? false;
+          session.meshReady = mesh?.hasVoiceReady() ?? false;
           broadcastWatchState();
         },
       },
@@ -197,7 +203,7 @@ function wireSignaling() {
         await mesh.connectTo(peer);
       }
     }
-    session.meshReady = mesh.hasOpenChannels();
+    session.meshReady = mesh.hasVoiceReady();
     startPing();
   });
 
@@ -449,12 +455,27 @@ export async function createRoom(name: string, password: string): Promise<void> 
 }
 
 export async function joinFromUrl(): Promise<boolean> {
+  if (urlJoinInFlight) return urlJoinInFlight;
+
   const params = new URLSearchParams(location.search);
   const roomId = location.pathname.match(/^\/r\/([^/]+)/)?.[1];
   const invite = params.get('t');
   const key = location.hash.match(/key=([^&]+)/)?.[1];
   if (!roomId || !invite || !key) return false;
 
+  urlJoinInFlight = joinFromUrlInner(roomId, invite, key);
+  try {
+    return await urlJoinInFlight;
+  } finally {
+    urlJoinInFlight = null;
+  }
+}
+
+async function joinFromUrlInner(
+  roomId: string,
+  invite: string,
+  key: string,
+): Promise<boolean> {
   loading.start('joining');
   session.invite = invite;
   session.roomKey = key;
@@ -807,6 +828,8 @@ function cleanupSession() {
   pttActive = false;
   audioMonitor.destroy();
   removeKeyListeners();
+  setPwaInSession(false);
+  applyPendingUpdate();
 }
 
 function clearPeerResume(roomId?: string) {

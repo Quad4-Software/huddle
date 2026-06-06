@@ -324,7 +324,7 @@ func (h *Hub) handleSignal(c *Client, msg Message) {
 	if !ok {
 		return
 	}
-	target.SendJSON(msg.Type, p)
+	target.sendCriticalJSON(msg.Type, p)
 }
 
 func (h *Hub) handleMemberUpdate(c *Client, raw []byte) {
@@ -489,7 +489,8 @@ func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string
 	h.mu.RUnlock()
 	for _, c := range targets {
 		if !c.enqueue(data) {
-			log.Printf("drop message to %s", c.ID)
+			log.Printf("drop message to %s, disconnecting stale client", c.ID)
+			h.unregister <- c
 		}
 	}
 }
@@ -562,7 +563,7 @@ func (h *Hub) ServeClient(conn *websocket.Conn, ip string) {
 		Hub:  h,
 		Conn: conn,
 		IP:   ip,
-		Send: make(chan []byte, 256),
+		Send: make(chan []byte, 1024),
 	}
 	go c.writePump()
 	c.readPump()

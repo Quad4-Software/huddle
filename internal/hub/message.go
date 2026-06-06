@@ -5,25 +5,26 @@ import "encoding/json"
 type MessageType string
 
 const (
-	TypeCreateRoom   MessageType = "create_room"
-	TypeJoin         MessageType = "join"
-	TypeLeave        MessageType = "leave"
-	TypeOffer        MessageType = "offer"
-	TypeAnswer       MessageType = "answer"
-	TypeICE          MessageType = "ice"
-	TypeRoomState    MessageType = "room_state"
-	TypeMemberUpdate MessageType = "member_update"
-	TypeAddChannel   MessageType = "add_channel"
-	TypeError        MessageType = "error"
-	TypeJoined       MessageType = "joined"
-	TypeCreated      MessageType = "created"
-	TypePeerJoined   MessageType = "peer_joined"
-	TypeRename       MessageType = "rename"
-	TypePing         MessageType = "ping"
-	TypePong         MessageType = "pong"
-	TypeKick         MessageType = "kick"
-	TypeKicked       MessageType = "kicked"
-	TypePeerLeft     MessageType = "peer_left"
+	TypeCreateRoom     MessageType = "create_room"
+	TypeJoin           MessageType = "join"
+	TypeLeave          MessageType = "leave"
+	TypeOffer          MessageType = "offer"
+	TypeAnswer         MessageType = "answer"
+	TypeICE            MessageType = "ice"
+	TypeRoomState      MessageType = "room_state"
+	TypeMemberUpdate   MessageType = "member_update"
+	TypeAddChannel     MessageType = "add_channel"
+	TypeError          MessageType = "error"
+	TypeJoined         MessageType = "joined"
+	TypeCreated        MessageType = "created"
+	TypePeerJoined     MessageType = "peer_joined"
+	TypeRename         MessageType = "rename"
+	TypePing           MessageType = "ping"
+	TypePong           MessageType = "pong"
+	TypeKick           MessageType = "kick"
+	TypeKicked         MessageType = "kicked"
+	TypeModerateMember MessageType = "moderate_member"
+	TypePeerLeft       MessageType = "peer_left"
 )
 
 type Message struct {
@@ -67,6 +68,12 @@ type JoinPayload struct {
 
 type KickPayload struct {
 	PeerID string `json:"peerId"`
+}
+
+type ModerateMemberPayload struct {
+	PeerID   string `json:"peerId"`
+	Muted    bool   `json:"muted"`
+	Deafened bool   `json:"deafened"`
 }
 
 type PeerLeftPayload struct {

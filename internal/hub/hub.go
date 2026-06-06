@@ -153,6 +153,8 @@ func (h *Hub) handleMessage(c *Client, data []byte) {
 		h.unregister <- c
 	case TypeKick:
 		h.handleKick(c, msg.Payload)
+	case TypeModerateMember:
+		h.handleModerateMember(c, msg.Payload)
 	default:
 		c.SendError("unknown message type")
 	}
@@ -367,6 +369,44 @@ func (h *Hub) handleKick(c *Client, raw []byte) {
 
 	target.sendCriticalJSON(TypeKicked, nil)
 	h.unregister <- target
+}
+
+func (h *Hub) handleModerateMember(c *Client, raw []byte) {
+	var p ModerateMemberPayload
+	if err := decodePayload(raw, &p); err != nil || p.PeerID == "" {
+		c.SendError("invalid moderate request")
+		return
+	}
+	if c.RoomID == "" || p.PeerID == c.ID {
+		c.SendError("invalid moderate request")
+		return
+	}
+	r, err := h.rooms.Get(c.RoomID)
+	if err != nil {
+		c.SendError("room not found")
+		return
+	}
+	if !r.IsHost(c.ID) {
+		c.SendError("only the host can moderate members")
+		return
+	}
+
+	h.mu.RLock()
+	_, ok := h.clients[c.RoomID][p.PeerID]
+	h.mu.RUnlock()
+	if !ok {
+		c.SendError("member not found")
+		return
+	}
+
+	muted := p.Muted || p.Deafened
+	r.UpdateMember(p.PeerID, muted, p.Deafened, false)
+	h.broadcast(c.RoomID, TypeMemberUpdate, MemberUpdatePayload{
+		PeerID:   p.PeerID,
+		Muted:    muted,
+		Deafened: p.Deafened,
+		Speaking: false,
+	}, "")
 }
 
 func (h *Hub) verifyPow(action string, payload *PowPayload) error {

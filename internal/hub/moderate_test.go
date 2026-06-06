@@ -1,0 +1,60 @@
+package hub
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestHubHostCanModerateMember(t *testing.T) {
+	url, _ := startTestHub(t, 4)
+	host, created, _ := createAndJoinHost(t, url)
+
+	guest := dialClient(t, url)
+	guest.send(TypeJoin, JoinPayload{
+		RoomID: created.RoomID,
+		Invite: created.Invite,
+		Name:   "Guest",
+	})
+	guestJoined := guest.readJoined()
+	_ = host.readType(TypePeerJoined)
+
+	host.send(TypeModerateMember, ModerateMemberPayload{
+		PeerID: guestJoined.PeerID,
+		Muted:  true,
+	})
+	update := guest.readType(TypeMemberUpdate)
+	var payload MemberUpdatePayload
+	if err := json.Unmarshal(update.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PeerID != guestJoined.PeerID || !payload.Muted || payload.Deafened {
+		t.Fatalf("unexpected member update: %+v", payload)
+	}
+}
+
+func TestHubNonHostCannotModerate(t *testing.T) {
+	url, _ := startTestHub(t, 4)
+	host, created, hostJoined := createAndJoinHost(t, url)
+
+	guest := dialClient(t, url)
+	guest.send(TypeJoin, JoinPayload{
+		RoomID: created.RoomID,
+		Invite: created.Invite,
+		Name:   "Guest",
+	})
+	_ = guest.readJoined()
+	_ = host.readType(TypePeerJoined)
+
+	guest.send(TypeModerateMember, ModerateMemberPayload{
+		PeerID: hostJoined.PeerID,
+		Muted:  true,
+	})
+	msg := guest.readType(TypeError)
+	var payload ErrorPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Message != "only the host can moderate members" {
+		t.Fatalf("unexpected error: %s", payload.Message)
+	}
+}

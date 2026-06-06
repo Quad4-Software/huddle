@@ -11,6 +11,7 @@
     mdiCog,
   } from '../icons';
   import { session } from '../stores/session.svelte';
+  import { audioLevels } from '../stores/audio-levels.svelte';
   import {
     toggleMute,
     toggleDeafen,
@@ -18,10 +19,14 @@
     stopShare,
     leaveSession,
   } from '../session-controller';
+  import VoiceLevelBars from './VoiceLevelBars.svelte';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
   const peerCount = $derived((session.room?.members.length ?? 1) - 1);
+  const localLevel = $derived(
+    session.muted || session.deafened ? 0 : audioLevels.level(session.peerId),
+  );
 
   function pingColor(ping: number) {
     if (ping < 80) return 'text-online';
@@ -77,6 +82,9 @@
   <p class="text-center text-xs text-muted">Ephemeral and encrypted room</p>
 
   <div class="flex items-center justify-end gap-1">
+    {#if session.connected && !session.muted && !session.deafened}
+      <VoiceLevelBars level={localLevel} bars={3} />
+    {/if}
     <button
       onclick={toggleMute}
       class="rounded-lg p-2.5 transition-colors {session.muted

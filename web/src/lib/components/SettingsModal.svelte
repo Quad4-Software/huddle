@@ -2,10 +2,15 @@
   import Icon from './Icon.svelte';
   import DisplayNameInput from './DisplayNameInput.svelte';
   import KeybindRecorder from './KeybindRecorder.svelte';
+  import MicActivationMeter from './MicActivationMeter.svelte';
   import { mdiClose, mdiRefresh, mdiMicrophone, mdiMicrophoneOff } from '../icons';
-  import { settings } from '../stores/settings.svelte';
+  import { settings, voiceActivationLevelThreshold } from '../stores/settings.svelte';
+  import { session } from '../stores/session.svelte';
+  import { audioLevels } from '../stores/audio-levels.svelte';
+  import { localMicLevel } from '../stores/local-mic-level.svelte';
   import { listAudioDevices } from '../webrtc/audio';
   import { micPreview } from '../webrtc/mic-preview';
+  import { settingsMicSampler } from '../webrtc/settings-mic-level';
   import { applyAudioSettings, changeName, refreshMic } from '../session-controller';
   import { APP_NAME, APP_VERSION } from '../version';
 
@@ -16,10 +21,30 @@
   let micListening = $state(false);
   let micPreviewError = $state('');
 
+  const micLevel = $derived(
+    session.connected ? audioLevels.level(session.peerId) : localMicLevel.level,
+  );
+  const activationThreshold = $derived(voiceActivationLevelThreshold());
+
   $effect(() => {
     return () => {
       void micPreview.stop();
+      void settingsMicSampler.stop();
     };
+  });
+
+  $effect(() => {
+    const mode = settings.inputMode;
+    const deviceId = settings.inputDeviceId;
+    const volume = settings.inputVolume;
+    const inRoom = session.connected;
+
+    if (mode !== 'voiceActivation' || inRoom || micListening) {
+      void settingsMicSampler.stop();
+      return;
+    }
+
+    void settingsMicSampler.restart(deviceId, volume);
   });
 
   async function syncMicPreview() {
@@ -46,11 +71,7 @@
       return;
     }
     try {
-      await micPreview.start(
-        settings.inputDeviceId,
-        settings.inputVolume,
-        settings.outputDeviceId,
-      );
+      await micPreview.start(settings.inputDeviceId, settings.inputVolume, settings.outputDeviceId);
       micListening = true;
     } catch {
       micPreviewError = 'Could not listen to microphone';
@@ -60,6 +81,7 @@
 
   function closeModal() {
     void micPreview.stop();
+    void settingsMicSampler.stop();
     micListening = false;
     onClose();
   }
@@ -97,6 +119,7 @@
 
   async function resetSettings() {
     await micPreview.stop();
+    await settingsMicSampler.stop();
     micListening = false;
     settings.reset();
     applyAudioSettings();
@@ -222,6 +245,11 @@
                 class="h-2 w-full accent-accent"
               />
             </label>
+            <MicActivationMeter
+              level={micLevel}
+              threshold={activationThreshold}
+              sensitivity={settings.voiceActivationThreshold}
+            />
           {/if}
 
           <label class="block">
@@ -266,8 +294,8 @@
       <section>
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Keybinds</h3>
         <p class="mb-3 text-xs leading-relaxed text-muted">
-          Record a key for each action. Keyboard shortcuts need a physical keyboard on desktop;
-          use on-screen controls on mobile.
+          Record a key for each action. Keyboard shortcuts need a physical keyboard on desktop; use
+          on-screen controls on mobile.
         </p>
         <div class="space-y-3">
           <KeybindRecorder

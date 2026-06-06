@@ -12,6 +12,8 @@
   let fileInput: HTMLInputElement;
   let chatEl: HTMLDivElement;
   let picker = $state<string | null>(null);
+  let dragging = $state(false);
+  let dragDepth = 0;
 
   const messages = $derived(session.messagesForChannel(session.activeChannel));
   const peerCount = $derived((session.room?.members.length ?? 1) - 1);
@@ -36,16 +38,53 @@
     }
   }
 
+  async function uploadFile(file: File) {
+    if (file.size > MAX_FILE_SIZE) {
+      session.error = 'File is too large';
+      return;
+    }
+    session.error = '';
+    await sendFile(file);
+  }
+
   async function onFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (file && file.size > MAX_FILE_SIZE) {
-      session.error = 'File is too large';
-      input.value = '';
-      return;
-    }
-    if (file) await sendFile(file);
+    if (file) await uploadFile(file);
     input.value = '';
+  }
+
+  function hasFilePayload(e: DragEvent) {
+    return e.dataTransfer?.types.includes('Files') ?? false;
+  }
+
+  function onDragEnter(e: DragEvent) {
+    if (!hasFilePayload(e)) return;
+    e.preventDefault();
+    dragDepth += 1;
+    dragging = true;
+  }
+
+  function onDragLeave(e: DragEvent) {
+    if (!hasFilePayload(e)) return;
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dragging = false;
+  }
+
+  function onDragOver(e: DragEvent) {
+    if (!hasFilePayload(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  }
+
+  async function onDrop(e: DragEvent) {
+    if (!hasFilePayload(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    dragging = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) await uploadFile(file);
   }
 
   function formatTime(ts: number) {
@@ -66,7 +105,26 @@
   }
 </script>
 
-<div class="relative flex h-full flex-col">
+<div
+  class="relative flex h-full flex-col"
+  ondragenter={onDragEnter}
+  ondragleave={onDragLeave}
+  ondragover={onDragOver}
+  ondrop={onDrop}
+>
+  {#if dragging}
+    <div
+      class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-surface-0/80 backdrop-blur-sm"
+      aria-hidden="true"
+    >
+      <div class="rounded-xl border border-accent/40 bg-surface-1 px-6 py-4 text-center shadow-lg">
+        <Icon path={mdiPaperclip} size={28} class="mx-auto mb-2 text-accent" />
+        <p class="text-sm font-medium">Drop file to attach</p>
+        <p class="mt-1 text-xs text-muted">Images, video, and other files</p>
+      </div>
+    </div>
+  {/if}
+
   <div class="flex items-center justify-between border-b border-border px-4 py-3">
     <span class="text-sm font-semibold">{session.room?.name ?? 'Room'}</span>
     <span class="text-xs {session.meshReady || peerCount === 0 ? 'text-online' : 'text-away'}">

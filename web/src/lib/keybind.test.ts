@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  captureKeyFromEvent,
-  formatKeyCode,
-  isModifierKey,
-  isTypingTarget,
-} from './keybind';
+import { captureKeyFromEvent, formatKeyCode, isModifierKey, isTypingTarget } from './keybind';
 
 describe('keybind helpers', () => {
   it('detects typing targets', () => {

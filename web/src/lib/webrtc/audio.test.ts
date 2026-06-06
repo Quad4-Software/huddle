@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSpeaking } from './audio';
+import { isSpeaking, measureAudioLevel } from './audio';
 
 function mockAnalyser(values: number[]): AnalyserNode {
   return {
@@ -23,5 +23,13 @@ describe('isSpeaking', () => {
     const analyser = mockAnalyser([10, 10, 10, 10]);
     expect(isSpeaking(analyser, 5)).toBe(true);
     expect(isSpeaking(analyser, 20)).toBe(false);
+  });
+});
+
+describe('measureAudioLevel', () => {
+  it('returns normalized level from analyser data', () => {
+    expect(measureAudioLevel(mockAnalyser([0, 0, 0, 0]))).toBe(0);
+    expect(measureAudioLevel(mockAnalyser([72, 72, 72, 72]))).toBe(1);
+    expect(measureAudioLevel(mockAnalyser([36, 36, 36, 36]))).toBeCloseTo(0.5, 1);
   });
 });

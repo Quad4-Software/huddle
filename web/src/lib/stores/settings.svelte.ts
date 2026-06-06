@@ -112,3 +112,7 @@ export function outputGain(deafened: boolean): number {
 export function voiceActivationThreshold(): number {
   return Math.round(5 + (100 - settings.voiceActivationThreshold) * 0.45);
 }
+
+export function voiceActivationLevelThreshold(): number {
+  return Math.min(1, voiceActivationThreshold() / 72);
+}

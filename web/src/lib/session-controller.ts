@@ -3,6 +3,7 @@ import { Mesh } from './webrtc/mesh';
 import { importRoomKey, importSigningKey } from './crypto/e2e';
 import { getMicStream } from './webrtc/audio';
 import { createMicPipeline, type MicPipeline } from './webrtc/mic-pipeline';
+import { AudioLevelMonitor } from './webrtc/audio-level-monitor';
 import { getScreenStream } from './webrtc/screen';
 import { session } from './stores/session.svelte';
 import { settings, voiceActivationThreshold } from './stores/settings.svelte';
@@ -41,6 +42,12 @@ let meshPeerId: string | null = null;
 let intentionalLeave = false;
 let reconnecting = false;
 let reconnectAbort = false;
+const audioMonitor = new AudioLevelMonitor();
+
+function registerVoiceStream(peerId: string, stream: MediaStream) {
+  if (stream.getAudioTracks().length === 0 || stream.getVideoTracks().length > 0) return;
+  audioMonitor.registerStream(peerId, stream);
+}
 
 function peerResumeKey(roomId: string) {
   return `huddle:peer:${roomId}`;
@@ -140,6 +147,7 @@ function wireSignaling() {
         onTrack: (peerId, stream) => {
           const wasShare = session.screenShares.some((s) => s.peerId === peerId);
           session.addRemoteStream(peerId, stream);
+          registerVoiceStream(peerId, stream);
           const isShare = session.screenShares.some((s) => s.peerId === peerId);
           if (isShare && !wasShare && peerId !== session.peerId) {
             mesh?.broadcastControl({
@@ -150,7 +158,15 @@ function wireSignaling() {
             });
           }
         },
-        onTrackRemoved: (peerId, stream) => session.removeRemoteStream(peerId, stream),
+        onTrackRemoved: (peerId, stream) => {
+          session.removeRemoteStream(peerId, stream);
+          if (
+            !stream ||
+            (stream.getAudioTracks().length > 0 && stream.getVideoTracks().length === 0)
+          ) {
+            audioMonitor.unregister(peerId);
+          }
+        },
         onPeerConnected: (peerId, connected) => {
           session.setPeerOnline(peerId, connected);
         },
@@ -167,6 +183,7 @@ function wireSignaling() {
       micPipeline = processed.pipeline;
       micPipeline.setInputVolume(settings.inputVolume);
       analyser = processed.analyser;
+      audioMonitor.registerAnalyser(p.peerId, analyser);
       await mesh.addLocalAudio(processed.stream);
       applyMicTransmit();
       startVoiceActivity();
@@ -788,6 +805,7 @@ function cleanupSession() {
   analyser = null;
   lastSpeaking = false;
   pttActive = false;
+  audioMonitor.destroy();
   removeKeyListeners();
 }
 
@@ -830,6 +848,7 @@ export async function refreshMic() {
   micPipeline = processed.pipeline;
   micPipeline.setInputVolume(settings.inputVolume);
   analyser = processed.analyser;
+  audioMonitor.registerAnalyser(session.peerId, analyser);
   await mesh?.addLocalAudio(processed.stream);
   applyMicTransmit();
   startVoiceActivity();

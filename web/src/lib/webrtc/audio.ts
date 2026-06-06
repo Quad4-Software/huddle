@@ -51,3 +51,12 @@ export function isSpeaking(analyser: AnalyserNode, threshold = 15): boolean {
   for (const v of data) sum += v;
   return sum / data.length > threshold;
 }
+
+export function measureAudioLevel(analyser: AnalyserNode): number {
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  let sum = 0;
+  for (const v of data) sum += v;
+  const avg = sum / data.length;
+  return Math.min(1, avg / 72);
+}

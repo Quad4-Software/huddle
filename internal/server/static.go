@@ -24,10 +24,13 @@ func spaHandler() http.Handler {
 			return
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
-			r.URL.Path = "/index.html"
-		} else if _, err := sub.Open(path); err != nil {
-			r.URL.Path = "/index.html"
+		switch {
+		case path == "", path == "index.html":
+			r.URL.Path = "/"
+		default:
+			if _, err := sub.Open(path); err != nil {
+				r.URL.Path = "/"
+			}
 		}
 		fileServer.ServeHTTP(w, r)
 	})

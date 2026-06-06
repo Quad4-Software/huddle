@@ -17,6 +17,7 @@ class SettingsStore {
   pushToTalkKey = $state(loadSettings().pushToTalkKey);
   toggleMuteKey = $state(loadSettings().toggleMuteKey);
   toggleDeafenKey = $state(loadSettings().toggleDeafenKey);
+  noiseSuppression = $state(loadSettings().noiseSuppression);
 
   private snapshot(): Settings {
     return {
@@ -30,6 +31,7 @@ class SettingsStore {
       pushToTalkKey: this.pushToTalkKey,
       toggleMuteKey: this.toggleMuteKey,
       toggleDeafenKey: this.toggleDeafenKey,
+      noiseSuppression: this.noiseSuppression,
     };
   }
 
@@ -87,6 +89,11 @@ class SettingsStore {
     this.persist();
   }
 
+  setNoiseSuppression(enabled: boolean) {
+    this.noiseSuppression = enabled;
+    this.persist();
+  }
+
   reset() {
     const d = { ...defaultSettings, displayName: this.displayName };
     this.inputDeviceId = d.inputDeviceId;
@@ -98,6 +105,7 @@ class SettingsStore {
     this.pushToTalkKey = d.pushToTalkKey;
     this.toggleMuteKey = d.toggleMuteKey;
     this.toggleDeafenKey = d.toggleDeafenKey;
+    this.noiseSuppression = d.noiseSuppression;
     this.persist();
   }
 }

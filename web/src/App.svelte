@@ -84,9 +84,9 @@
 
 {#if (booting || loading.active) && !(session.connected && session.room)}
   <LoadingScreen />
-{:else if session.room && connection.status !== 'online'}
+{:else if session.room && connection.status !== 'online' && !session.connected && connection.status === 'offline'}
   <ConnectionLost />
-{:else if view === 'room' && session.connected}
+{:else if session.room}
   <RoomView onSettings={openSettings} />
 {:else}
   <Landing onSettings={openSettings} />

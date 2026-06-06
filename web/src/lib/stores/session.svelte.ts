@@ -1,4 +1,6 @@
 import { sortMembers } from '../members';
+import type { ConnectionQuality } from '../connection-health';
+import { computeJitter, computeQuality } from '../connection-health';
 import type { RoomState, ChatMessage, Member, ScreenShare, ReactionState } from '../types';
 
 class SessionStore {
@@ -26,7 +28,14 @@ class SessionStore {
   connected = $state(false);
   meshReady = $state(false);
   ping = $state<number | null>(null);
+  jitter = $state<number | null>(null);
+  iceState = $state('none');
+  connectionQuality = $state<ConnectionQuality>('unknown');
+  micError = $state('');
+  focusMode = $state(false);
   error = $state('');
+
+  private pingSamples: number[] = [];
 
   sortedMembers = $derived(sortMembers(this.room?.members ?? []));
   isHost = $derived(!!this.room?.hostId && this.room.hostId === this.peerId);
@@ -196,6 +205,30 @@ class SessionStore {
     this.watchers = { ...this.watchers, [shareId]: next };
   }
 
+  recordPing(ping: number) {
+    this.ping = ping;
+    this.pingSamples = [...this.pingSamples.slice(-7), ping];
+    this.jitter = computeJitter(this.pingSamples);
+    this.refreshConnectionQuality();
+  }
+
+  updateIceState(state: string) {
+    this.iceState = state;
+    this.refreshConnectionQuality();
+  }
+
+  refreshConnectionQuality() {
+    const peerCount = (this.room?.members.length ?? 1) - 1;
+    this.connectionQuality = computeQuality(
+      this.connected,
+      this.meshReady,
+      peerCount,
+      this.ping,
+      this.jitter,
+      this.iceState,
+    );
+  }
+
   reset() {
     this.peerId = '';
     this.room = null;
@@ -221,7 +254,13 @@ class SessionStore {
     this.connected = false;
     this.meshReady = false;
     this.ping = null;
+    this.jitter = null;
+    this.iceState = 'none';
+    this.connectionQuality = 'unknown';
+    this.micError = '';
+    this.focusMode = false;
     this.error = '';
+    this.pingSamples = [];
   }
 }
 

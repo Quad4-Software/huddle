@@ -11,12 +11,18 @@ export async function listAudioDevices(): Promise<AudioDevices> {
   };
 }
 
-export async function getMicStream(deviceId?: string): Promise<MediaStream> {
+export interface MicStreamOptions {
+  deviceId?: string;
+  noiseSuppression?: boolean;
+}
+
+export async function getMicStream(options: MicStreamOptions = {}): Promise<MediaStream> {
+  const { deviceId, noiseSuppression = true } = options;
   const constraints: MediaStreamConstraints = {
     audio: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
       echoCancellation: true,
-      noiseSuppression: true,
+      noiseSuppression,
       autoGainControl: true,
       channelCount: 1,
     },

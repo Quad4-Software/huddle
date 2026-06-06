@@ -15,7 +15,7 @@ export class MicPreview {
 
   async start(deviceId: string, inputVolume: number, outputDeviceId: string) {
     await this.stop();
-    this.stream = await getMicStream(deviceId || undefined);
+    this.stream = await getMicStream({ deviceId: deviceId || undefined });
     this.ctx = new AudioContext();
     const source = this.ctx.createMediaStreamSource(this.stream);
     this.analyser = this.ctx.createAnalyser();

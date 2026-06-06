@@ -11,9 +11,12 @@
     mdiPictureInPictureBottomRight,
     mdiVolumeHigh,
     mdiVolumeOff,
+    mdiMessageOffOutline,
+    mdiMessageTextOutline,
   } from '../icons';
   import { session } from '../stores/session.svelte';
   import { settings, outputGain } from '../stores/settings.svelte';
+  import { peerVolumes } from '../stores/peer-volumes.svelte';
   import { setSharePaused, toggleShareAudioMuted } from '../session-controller';
   import { setOutputDevice } from '../webrtc/audio';
   import { bindScreenVideo, hasScreenAudio } from '../screen-video';
@@ -41,6 +44,10 @@
 
   const outputLevel = $derived(outputGain(session.deafened));
 
+  function voiceGain(peerId: string): number {
+    return outputLevel * peerVolumes.gain(peerId);
+  }
+
   const allShares = $derived(session.allActiveShares);
 
   const focused = $derived(
@@ -56,6 +63,12 @@
   );
 
   const focusedHasAudio = $derived(focused ? hasScreenAudio(focused.stream) : false);
+
+  $effect(() => {
+    if (allShares.length === 0 && session.focusMode) {
+      session.focusMode = false;
+    }
+  });
 
   $effect(() => {
     if (!mainVideo || !focused) return;
@@ -111,6 +124,18 @@
       <div class="flex items-center gap-2">
         {#if allShares.length > 0}
           <span class="text-xs text-speaking">{allShares.length} live</span>
+          <button
+            type="button"
+            onclick={() => (session.focusMode = !session.focusMode)}
+            class="rounded p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+            title={session.focusMode ? 'Show chat' : 'Focus on screen share'}
+            aria-label={session.focusMode ? 'Show chat' : 'Focus on screen share'}
+          >
+            <Icon
+              path={session.focusMode ? mdiMessageTextOutline : mdiMessageOffOutline}
+              size={18}
+            />
+          </button>
         {:else}
           <span class="text-xs text-muted">No active shares</span>
         {/if}
@@ -287,7 +312,7 @@
 
 {#each Object.entries(session.remoteVoiceStreams) as [peerId, stream] (peerId)}
   {#if stream.getAudioTracks().length > 0}
-    <audio use:audioAction={{ stream, gain: outputLevel }} class="hidden" autoplay></audio>
+    <audio use:audioAction={{ stream, gain: voiceGain(peerId) }} class="hidden" autoplay></audio>
   {/if}
 {/each}
 

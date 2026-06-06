@@ -39,4 +39,9 @@ export {
   mdiAccessPointNetwork,
   mdiCloudOffOutline,
   mdiRefresh,
+  mdiForumOutline,
+  mdiMessageOffOutline,
+  mdiMessageTextOutline,
+  mdiGestureTapHold,
+  mdiAccountMultiple,
 } from '@mdi/js';

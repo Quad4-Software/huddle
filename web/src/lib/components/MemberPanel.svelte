@@ -15,6 +15,7 @@
   } from '../icons';
   import { session } from '../stores/session.svelte';
   import { audioLevels } from '../stores/audio-levels.svelte';
+  import { peerVolumes } from '../stores/peer-volumes.svelte';
   import { memberStatus } from '../members';
   import { kickMember, moderateMember } from '../session-controller';
 
@@ -147,6 +148,24 @@
             {/if}
           </p>
           <p class="text-xs capitalize {statusText(status)}">{status}</p>
+          {#if member.id !== session.peerId && online && !member.deafened}
+            <label class="mt-1.5 flex items-center gap-2">
+              <span class="sr-only">Volume for {member.name}</span>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={peerVolumes.get(member.id)}
+                oninput={(e) =>
+                  peerVolumes.set(member.id, Number((e.target as HTMLInputElement).value))}
+                class="h-1 w-full max-w-[140px] accent-accent"
+                aria-label="Volume for {member.name}"
+              />
+              <span class="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted">
+                {peerVolumes.get(member.id)}%
+              </span>
+            </label>
+          {/if}
         </div>
         <div class="flex items-center gap-1.5 text-muted">
           {#if member.deafened}

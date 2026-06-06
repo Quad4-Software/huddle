@@ -111,6 +111,16 @@ export class Mesh {
     return this.hasOpenChannels();
   }
 
+  getAggregateIceState(): string {
+    if (this.peers.size === 0) return 'none';
+    const states = [...this.peers.values()].map((pc) => pc.iceConnectionState);
+    if (states.some((s) => s === 'failed')) return 'failed';
+    if (states.some((s) => s === 'disconnected')) return 'disconnected';
+    if (states.some((s) => s === 'checking' || s === 'new')) return 'checking';
+    if (states.every((s) => s === 'connected' || s === 'completed')) return 'connected';
+    return states[0] ?? 'none';
+  }
+
   async addLocalAudio(stream: MediaStream) {
     this.localStream = stream;
     for (const [, pc] of this.peers) {

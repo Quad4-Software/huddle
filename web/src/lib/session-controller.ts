@@ -2,6 +2,7 @@ import { Signaling } from './ws/signaling';
 import { Mesh } from './webrtc/mesh';
 import { importRoomKey, importSigningKey } from './crypto/e2e';
 import { getMicStream } from './webrtc/audio';
+import { micErrorMessage } from './mic-error';
 import { createMicPipeline, type MicPipeline } from './webrtc/mic-pipeline';
 import { AudioLevelMonitor } from './webrtc/audio-level-monitor';
 import { getScreenStream } from './webrtc/screen';
@@ -35,7 +36,9 @@ let micPipeline: MicPipeline | null = null;
 let analyser: AnalyserNode | null = null;
 let speakTimer: ReturnType<typeof setInterval> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+let healthTimer: ReturnType<typeof setInterval> | null = null;
 let lastSpeaking = false;
+let muteBeforeDeafen = false;
 let pttActive = false;
 let keyListenersInstalled = false;
 let signalingWired = false;
@@ -45,6 +48,23 @@ let reconnecting = false;
 let reconnectAbort = false;
 let urlJoinInFlight: Promise<boolean> | null = null;
 const audioMonitor = new AudioLevelMonitor();
+
+function micOptions() {
+  return {
+    deviceId: settings.inputDeviceId || undefined,
+    noiseSuppression: settings.noiseSuppression,
+  };
+}
+
+function updateConnectionHealth() {
+  session.updateIceState(mesh?.getAggregateIceState() ?? 'none');
+}
+
+function startHealthMonitor() {
+  if (healthTimer) clearInterval(healthTimer);
+  updateConnectionHealth();
+  healthTimer = setInterval(updateConnectionHealth, 3000);
+}
 
 function registerVoiceStream(peerId: string, stream: MediaStream) {
   if (stream.getAudioTracks().length === 0 || stream.getVideoTracks().length > 0) return;
@@ -178,24 +198,26 @@ function wireSignaling() {
         },
         onMeshReady: () => {
           session.meshReady = mesh?.hasVoiceReady() ?? false;
+          session.refreshConnectionQuality();
           broadcastWatchState();
         },
       },
     );
 
     try {
-      micStream = await getMicStream(settings.inputDeviceId || undefined);
+      micStream = await getMicStream(micOptions());
       const processed = createMicPipeline(micStream);
       micPipeline = processed.pipeline;
       micPipeline.setInputVolume(settings.inputVolume);
       analyser = processed.analyser;
       audioMonitor.registerAnalyser(p.peerId, analyser);
       await mesh.addLocalAudio(processed.stream);
+      session.micError = '';
       applyMicTransmit();
       startVoiceActivity();
       ensureKeyListeners();
-    } catch {
-      session.error = 'Microphone access denied';
+    } catch (err) {
+      session.micError = micErrorMessage(err);
     }
 
     for (const peer of peers) {
@@ -204,7 +226,9 @@ function wireSignaling() {
       }
     }
     session.meshReady = mesh.hasVoiceReady();
+    session.refreshConnectionQuality();
     startPing();
+    startHealthMonitor();
   });
 
   signaling.on('peer_joined', async (payload) => {
@@ -275,12 +299,14 @@ function wireSignaling() {
 
   signaling.on('pong', (payload) => {
     const p = payload as { t: number };
-    session.ping = Math.max(0, Math.round(Date.now() - p.t));
+    session.recordPing(Math.max(0, Math.round(Date.now() - p.t)));
   });
 
   signaling.on('close', () => {
     session.meshReady = false;
     session.ping = null;
+    session.jitter = null;
+    session.refreshConnectionQuality();
     if (intentionalLeave) {
       session.connected = false;
       connection.reset();
@@ -307,8 +333,10 @@ function wireSignaling() {
 function teardownTransport() {
   if (speakTimer) clearInterval(speakTimer);
   if (pingTimer) clearInterval(pingTimer);
+  if (healthTimer) clearInterval(healthTimer);
   speakTimer = null;
   pingTimer = null;
+  healthTimer = null;
   micPipeline?.close();
   micPipeline = null;
   micStream?.getTracks().forEach((t) => t.stop());
@@ -321,6 +349,8 @@ function teardownTransport() {
   pttActive = false;
   session.meshReady = false;
   session.ping = null;
+  session.jitter = null;
+  session.refreshConnectionQuality();
 }
 
 async function reconnectSession(roomId: string, invite: string) {
@@ -713,6 +743,24 @@ function sendMemberState(speaking: boolean) {
   });
 }
 
+export function setPttActive(active: boolean) {
+  if (settings.inputMode !== 'pushToTalk') return;
+  pttActive = active;
+  applyMicTransmit();
+}
+
+export function clearMicError() {
+  session.micError = '';
+}
+
+export async function retryMic() {
+  session.micError = '';
+  try {
+    await refreshMic();
+  } catch (err) {
+    session.micError = micErrorMessage(err);
+  }
+}
 export function toggleMute() {
   session.muted = !session.muted;
   applyMicTransmit();
@@ -721,8 +769,14 @@ export function toggleMute() {
 }
 
 export function toggleDeafen() {
-  session.deafened = !session.deafened;
-  if (session.deafened) session.muted = true;
+  if (!session.deafened) {
+    muteBeforeDeafen = session.muted;
+    session.deafened = true;
+    session.muted = true;
+  } else {
+    session.deafened = false;
+    session.muted = muteBeforeDeafen;
+  }
   applyMicTransmit();
   lastSpeaking = false;
   sendMemberState(false);
@@ -806,8 +860,10 @@ export function stopShare() {
 function cleanupSession() {
   if (speakTimer) clearInterval(speakTimer);
   if (pingTimer) clearInterval(pingTimer);
+  if (healthTimer) clearInterval(healthTimer);
   speakTimer = null;
   pingTimer = null;
+  healthTimer = null;
   micPipeline?.close();
   micPipeline = null;
   micStream?.getTracks().forEach((t) => t.stop());
@@ -822,6 +878,7 @@ function cleanupSession() {
   analyser = null;
   lastSpeaking = false;
   pttActive = false;
+  muteBeforeDeafen = false;
   audioMonitor.destroy();
   removeKeyListeners();
   setPwaInSession(false);
@@ -862,13 +919,14 @@ export async function refreshMic() {
   micPipeline?.close();
   micPipeline = null;
   micStream?.getTracks().forEach((t) => t.stop());
-  micStream = await getMicStream(settings.inputDeviceId || undefined);
+  micStream = await getMicStream(micOptions());
   const processed = createMicPipeline(micStream);
   micPipeline = processed.pipeline;
   micPipeline.setInputVolume(settings.inputVolume);
   analyser = processed.analyser;
   audioMonitor.registerAnalyser(session.peerId, analyser);
   await mesh?.addLocalAudio(processed.stream);
+  session.micError = '';
   applyMicTransmit();
   startVoiceActivity();
 }

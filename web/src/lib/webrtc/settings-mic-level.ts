@@ -23,7 +23,7 @@ export class SettingsMicSampler {
 
   async start(deviceId: string, inputVolume: number) {
     await this.stop();
-    this.stream = await getMicStream(deviceId || undefined);
+    this.stream = await getMicStream({ deviceId: deviceId || undefined });
     const processed = createMicPipeline(this.stream);
     this.pipeline = processed.pipeline;
     this.pipeline.setInputVolume(inputVolume);

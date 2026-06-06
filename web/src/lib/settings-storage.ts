@@ -13,6 +13,7 @@ export interface Settings {
   pushToTalkKey: string;
   toggleMuteKey: string;
   toggleDeafenKey: string;
+  noiseSuppression: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -26,6 +27,7 @@ export const defaultSettings: Settings = {
   pushToTalkKey: 'Space',
   toggleMuteKey: '',
   toggleDeafenKey: '',
+  noiseSuppression: true,
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -45,6 +47,7 @@ function normalize(raw: Partial<Settings>): Settings {
       typeof raw.pushToTalkKey === 'string' && raw.pushToTalkKey ? raw.pushToTalkKey : 'Space',
     toggleMuteKey: typeof raw.toggleMuteKey === 'string' ? raw.toggleMuteKey : '',
     toggleDeafenKey: typeof raw.toggleDeafenKey === 'string' ? raw.toggleDeafenKey : '',
+    noiseSuppression: raw.noiseSuppression !== false,
   };
 }
 

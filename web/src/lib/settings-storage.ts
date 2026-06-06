@@ -11,6 +11,8 @@ export interface Settings {
   inputVolume: number;
   outputVolume: number;
   pushToTalkKey: string;
+  toggleMuteKey: string;
+  toggleDeafenKey: string;
 }
 
 export const defaultSettings: Settings = {
@@ -22,6 +24,8 @@ export const defaultSettings: Settings = {
   inputVolume: 100,
   outputVolume: 100,
   pushToTalkKey: 'Space',
+  toggleMuteKey: '',
+  toggleDeafenKey: '',
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -39,6 +43,8 @@ function normalize(raw: Partial<Settings>): Settings {
     outputVolume: clamp(Number(raw.outputVolume) || 100, 0, 200),
     pushToTalkKey:
       typeof raw.pushToTalkKey === 'string' && raw.pushToTalkKey ? raw.pushToTalkKey : 'Space',
+    toggleMuteKey: typeof raw.toggleMuteKey === 'string' ? raw.toggleMuteKey : '',
+    toggleDeafenKey: typeof raw.toggleDeafenKey === 'string' ? raw.toggleDeafenKey : '',
   };
 }
 

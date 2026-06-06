@@ -21,9 +21,12 @@ const KEY_LABELS: Record<string, string> = {
   Comma: ',',
   Period: '.',
   Slash: '/',
+  Enter: 'Enter',
+  Backspace: 'Backspace',
 };
 
 export function formatKeyCode(code: string): string {
+  if (!code) return 'Not set';
   if (KEY_LABELS[code]) return KEY_LABELS[code];
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
@@ -36,4 +39,38 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+export function isModifierKey(code: string): boolean {
+  return (
+    code.startsWith('Control') ||
+    code.startsWith('Shift') ||
+    code.startsWith('Alt') ||
+    code.startsWith('Meta')
+  );
+}
+
+export type KeyCaptureResult = 'cancel' | 'clear' | { code: string };
+
+export function captureKeyFromEvent(e: KeyboardEvent): KeyCaptureResult | null {
+  if (e.code === 'Escape') return 'cancel';
+  if (e.code === 'Backspace' || e.code === 'Delete') return 'clear';
+  if (isModifierKey(e.code)) return null;
+  return { code: e.code };
+}
+
+let activeRecorderCancel: (() => void) | null = null;
+
+export function claimKeyRecorder(cancel: () => void): boolean {
+  activeRecorderCancel?.();
+  activeRecorderCancel = cancel;
+  return true;
+}
+
+export function releaseKeyRecorder(cancel: () => void) {
+  if (activeRecorderCancel === cancel) activeRecorderCancel = null;
+}
+
+export function isKeyRecorderActive(): boolean {
+  return activeRecorderCancel !== null;
 }

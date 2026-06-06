@@ -1,19 +1,18 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import DisplayNameInput from './DisplayNameInput.svelte';
+  import KeybindRecorder from './KeybindRecorder.svelte';
   import { mdiClose, mdiRefresh, mdiMicrophone, mdiMicrophoneOff } from '../icons';
   import { settings } from '../stores/settings.svelte';
   import { listAudioDevices } from '../webrtc/audio';
   import { micPreview } from '../webrtc/mic-preview';
   import { applyAudioSettings, changeName, refreshMic } from '../session-controller';
-  import { formatKeyCode } from '../keybind';
   import { APP_NAME, APP_VERSION } from '../version';
 
   let { onClose }: { onClose: () => void } = $props();
 
   let inputs = $state<MediaDeviceInfo[]>([]);
   let outputs = $state<MediaDeviceInfo[]>([]);
-  let capturingKey = $state(false);
   let micListening = $state(false);
   let micPreviewError = $state('');
 
@@ -96,19 +95,6 @@
     applyAudioSettings();
   }
 
-  function onKeyCapture(e: KeyboardEvent) {
-    if (!capturingKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.code === 'Escape') {
-      capturingKey = false;
-      return;
-    }
-    settings.setPushToTalkKey(e.code);
-    capturingKey = false;
-    applyAudioSettings();
-  }
-
   async function resetSettings() {
     await micPreview.stop();
     micListening = false;
@@ -117,34 +103,33 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeyCapture} />
-
 <div
-  class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+  class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
   role="presentation"
   onclick={closeModal}
 >
   <div
-    class="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col rounded-xl border border-border bg-surface-1 shadow-2xl"
+    class="flex max-h-[min(92dvh,820px)] w-full max-w-xl flex-col rounded-t-2xl border border-border bg-surface-1 shadow-2xl sm:max-h-[min(90vh,820px)] sm:max-w-2xl sm:rounded-xl"
     role="dialog"
     aria-labelledby="settings-title"
     tabindex="-1"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.key === 'Escape' && closeModal()}
+    style="padding-bottom: max(0px, env(safe-area-inset-bottom));"
   >
-    <div class="flex items-center justify-between border-b border-border px-5 py-4">
+    <div class="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6">
       <h2 id="settings-title" class="text-base font-semibold">Settings</h2>
       <button
         type="button"
         onclick={closeModal}
-        class="rounded-lg p-1 text-muted transition-colors hover:bg-surface-2 hover:text-text"
+        class="rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-text min-h-11 min-w-11 flex items-center justify-center"
         aria-label="Close settings"
       >
         <Icon path={mdiClose} size={18} />
       </button>
     </div>
 
-    <div class="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+    <div class="flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
       <section>
         <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Profile</h3>
         <label class="block">
@@ -166,7 +151,7 @@
             <select
               value={settings.inputDeviceId}
               onchange={onInputChange}
-              class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+              class="min-h-11 w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm outline-none focus:border-accent"
             >
               <option value="">System default</option>
               {#each inputs as dev (dev.deviceId)}
@@ -192,7 +177,7 @@
             <select
               value={settings.outputDeviceId}
               onchange={onOutputChange}
-              class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+              class="min-h-11 w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm outline-none focus:border-accent"
             >
               <option value="">System default</option>
               {#each outputs as dev (dev.deviceId)}
@@ -211,7 +196,7 @@
             <select
               value={settings.inputMode}
               onchange={onInputModeChange}
-              class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+              class="min-h-11 w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm outline-none focus:border-accent"
             >
               <option value="voiceActivation">Voice activation</option>
               <option value="pushToTalk">Push to talk</option>
@@ -234,21 +219,8 @@
                     Number((e.target as HTMLInputElement).value),
                   );
                 }}
-                class="w-full accent-accent"
+                class="h-2 w-full accent-accent"
               />
-            </label>
-          {:else}
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-medium text-muted">Push to talk key</span>
-              <button
-                type="button"
-                onclick={() => (capturingKey = true)}
-                class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left text-sm transition-colors hover:border-accent {capturingKey
-                  ? 'border-accent text-accent'
-                  : ''}"
-              >
-                {capturingKey ? 'Press a key...' : formatKeyCode(settings.pushToTalkKey)}
-              </button>
             </label>
           {/if}
 
@@ -267,7 +239,7 @@
                 applyAudioSettings();
                 void syncMicPreview();
               }}
-              class="w-full accent-accent"
+              class="h-2 w-full accent-accent"
             />
           </label>
 
@@ -285,9 +257,39 @@
                 settings.setOutputVolume(Number((e.target as HTMLInputElement).value));
                 void syncMicPreview();
               }}
-              class="w-full accent-accent"
+              class="h-2 w-full accent-accent"
             />
           </label>
+        </div>
+      </section>
+
+      <section>
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Keybinds</h3>
+        <p class="mb-3 text-xs leading-relaxed text-muted">
+          Record a key for each action. Keyboard shortcuts need a physical keyboard on desktop;
+          use on-screen controls on mobile.
+        </p>
+        <div class="space-y-3">
+          <KeybindRecorder
+            label="Push to talk"
+            hint="Hold while speaking when push-to-talk mode is enabled"
+            value={settings.pushToTalkKey}
+            defaultValue="Space"
+            required
+            onchange={(code) => settings.setPushToTalkKey(code)}
+          />
+          <KeybindRecorder
+            label="Toggle mute"
+            hint="Optional shortcut to mute and unmute your microphone"
+            value={settings.toggleMuteKey}
+            onchange={(code) => settings.setToggleMuteKey(code)}
+          />
+          <KeybindRecorder
+            label="Toggle deafen"
+            hint="Optional shortcut to deafen and undeafen"
+            value={settings.toggleDeafenKey}
+            onchange={(code) => settings.setToggleDeafenKey(code)}
+          />
         </div>
       </section>
 
@@ -303,7 +305,7 @@
       </section>
     </div>
 
-    <div class="border-t border-border px-5 py-4">
+    <div class="border-t border-border px-4 py-4 sm:px-6">
       <button
         type="button"
         onclick={resetSettings}

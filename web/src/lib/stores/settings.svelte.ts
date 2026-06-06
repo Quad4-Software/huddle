@@ -15,6 +15,8 @@ class SettingsStore {
   inputVolume = $state(loadSettings().inputVolume);
   outputVolume = $state(loadSettings().outputVolume);
   pushToTalkKey = $state(loadSettings().pushToTalkKey);
+  toggleMuteKey = $state(loadSettings().toggleMuteKey);
+  toggleDeafenKey = $state(loadSettings().toggleDeafenKey);
 
   private snapshot(): Settings {
     return {
@@ -26,6 +28,8 @@ class SettingsStore {
       inputVolume: this.inputVolume,
       outputVolume: this.outputVolume,
       pushToTalkKey: this.pushToTalkKey,
+      toggleMuteKey: this.toggleMuteKey,
+      toggleDeafenKey: this.toggleDeafenKey,
     };
   }
 
@@ -73,6 +77,16 @@ class SettingsStore {
     this.persist();
   }
 
+  setToggleMuteKey(code: string) {
+    this.toggleMuteKey = code;
+    this.persist();
+  }
+
+  setToggleDeafenKey(code: string) {
+    this.toggleDeafenKey = code;
+    this.persist();
+  }
+
   reset() {
     const d = { ...defaultSettings, displayName: this.displayName };
     this.inputDeviceId = d.inputDeviceId;
@@ -82,6 +96,8 @@ class SettingsStore {
     this.inputVolume = d.inputVolume;
     this.outputVolume = d.outputVolume;
     this.pushToTalkKey = d.pushToTalkKey;
+    this.toggleMuteKey = d.toggleMuteKey;
+    this.toggleDeafenKey = d.toggleDeafenKey;
     this.persist();
   }
 }

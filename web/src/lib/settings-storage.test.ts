@@ -15,6 +15,8 @@ describe('settings storage', () => {
       displayName: 'Ada',
       inputMode: 'pushToTalk',
       pushToTalkKey: 'KeyV',
+      toggleMuteKey: 'KeyM',
+      toggleDeafenKey: 'KeyD',
     });
     expect(loadSettings()).toEqual({
       ...defaultSettings,
@@ -23,6 +25,8 @@ describe('settings storage', () => {
       displayName: 'Ada',
       inputMode: 'pushToTalk',
       pushToTalkKey: 'KeyV',
+      toggleMuteKey: 'KeyM',
+      toggleDeafenKey: 'KeyD',
     });
   });
 

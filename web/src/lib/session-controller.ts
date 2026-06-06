@@ -13,7 +13,7 @@ import { randomDisplayName } from './random-name';
 import { solvePow } from './pow';
 import { RECONNECT_MAX_ATTEMPTS, reconnectDelayMs, sleep } from './reconnect';
 import type { RoomState, ControlMessage } from './types';
-import { isTypingTarget } from './keybind';
+import { isTypingTarget, isKeyRecorderActive } from './keybind';
 import { isSpeaking } from './webrtc/audio';
 import {
   cleanBounded,
@@ -35,7 +35,7 @@ let speakTimer: ReturnType<typeof setInterval> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let lastSpeaking = false;
 let pttActive = false;
-let pttListenersInstalled = false;
+let keyListenersInstalled = false;
 let signalingWired = false;
 let meshPeerId: string | null = null;
 let intentionalLeave = false;
@@ -170,7 +170,7 @@ function wireSignaling() {
       await mesh.addLocalAudio(processed.stream);
       applyMicTransmit();
       startVoiceActivity();
-      ensurePttListeners();
+      ensureKeyListeners();
     } catch {
       session.error = 'Microphone access denied';
     }
@@ -559,33 +559,49 @@ export function moderateMember(peerId: string, muted: boolean, deafened: boolean
   signaling?.send('moderate_member', { peerId, muted: nextMuted, deafened: nextDeafened });
 }
 
-function ensurePttListeners() {
-  if (pttListenersInstalled) return;
-  pttListenersInstalled = true;
-  window.addEventListener('keydown', onPttKeyDown);
-  window.addEventListener('keyup', onPttKeyUp);
+function ensureKeyListeners() {
+  if (keyListenersInstalled) return;
+  keyListenersInstalled = true;
+  window.addEventListener('keydown', onGlobalKeyDown);
+  window.addEventListener('keyup', onGlobalKeyUp);
   window.addEventListener('blur', onPttBlur);
 }
 
-function removePttListeners() {
-  if (!pttListenersInstalled) return;
-  pttListenersInstalled = false;
-  window.removeEventListener('keydown', onPttKeyDown);
-  window.removeEventListener('keyup', onPttKeyUp);
+function removeKeyListeners() {
+  if (!keyListenersInstalled) return;
+  keyListenersInstalled = false;
+  window.removeEventListener('keydown', onGlobalKeyDown);
+  window.removeEventListener('keyup', onGlobalKeyUp);
   window.removeEventListener('blur', onPttBlur);
   pttActive = false;
 }
 
-function onPttKeyDown(e: KeyboardEvent) {
-  if (settings.inputMode !== 'pushToTalk') return;
-  if (e.code !== settings.pushToTalkKey) return;
-  if (e.repeat || isTypingTarget(e.target)) return;
-  e.preventDefault();
-  pttActive = true;
-  applyMicTransmit();
+function onGlobalKeyDown(e: KeyboardEvent) {
+  if (isKeyRecorderActive() || isTypingTarget(e.target)) return;
+
+  if (settings.inputMode === 'pushToTalk' && e.code === settings.pushToTalkKey && !e.repeat) {
+    e.preventDefault();
+    pttActive = true;
+    applyMicTransmit();
+    return;
+  }
+
+  if (e.repeat) return;
+
+  if (settings.toggleMuteKey && e.code === settings.toggleMuteKey) {
+    e.preventDefault();
+    toggleMute();
+    return;
+  }
+
+  if (settings.toggleDeafenKey && e.code === settings.toggleDeafenKey) {
+    e.preventDefault();
+    toggleDeafen();
+  }
 }
 
-function onPttKeyUp(e: KeyboardEvent) {
+function onGlobalKeyUp(e: KeyboardEvent) {
+  if (isKeyRecorderActive() || isTypingTarget(e.target)) return;
   if (settings.inputMode !== 'pushToTalk') return;
   if (e.code !== settings.pushToTalkKey) return;
   pttActive = false;
@@ -772,7 +788,7 @@ function cleanupSession() {
   analyser = null;
   lastSpeaking = false;
   pttActive = false;
-  removePttListeners();
+  removeKeyListeners();
 }
 
 function clearPeerResume(roomId?: string) {

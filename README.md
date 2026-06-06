@@ -60,7 +60,7 @@ Useful server flags:
 | `-max-room-size` | `12` | Max peers per room |
 | `-max-rooms` | `1000` | Max active rooms |
 | `-invite-ttl` | `24h` | Invite token lifetime |
-| `-pow-difficulty` | `12` | Proof-of-work bits (`0` disables) |
+| `-pow-difficulty` | `0` | Proof-of-work bits (`0` disables) |
 | `-rate-limit-create` | `10` | Room creates per IP per minute |
 | `-turn-listen-addr` | `:3478` | Built-in TURN UDP listen address |
 | `-turn-credential-ttl` | `4h` | Built-in TURN credential lifetime |

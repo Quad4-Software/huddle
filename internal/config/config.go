@@ -42,7 +42,7 @@ func Load() Config {
 	rateWS := flag.Int("rate-limit-ws", 20, "WebSocket upgrades per IP per window")
 	rateCreate := flag.Int("rate-limit-create", 10, "room creates per IP per window")
 	rateJoin := flag.Int("rate-limit-join", 30, "room joins per IP per window")
-	powDifficulty := flag.Int("pow-difficulty", 12, "proof-of-work leading zero bits (0 disables)")
+	powDifficulty := flag.Int("pow-difficulty", 0, "proof-of-work leading zero bits (0 disables)")
 	powTTL := flag.Duration("pow-ttl", 5*time.Minute, "proof-of-work challenge lifetime")
 	turnListenAddr := flag.String("turn-listen-addr", ":3478", "TURN UDP listen address")
 	turnPublicAddr := flag.String("turn-public-addr", "", "public host:port advertised for built-in TURN")

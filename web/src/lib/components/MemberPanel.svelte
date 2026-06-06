@@ -14,7 +14,7 @@
   } from '../icons';
   import { session } from '../stores/session.svelte';
   import { memberStatus } from '../members';
-  import { kickMember } from '../session-controller';
+  import { kickMember, moderateMember } from '../session-controller';
 
   function isOnline(peerId: string) {
     if (peerId === session.peerId) return session.connected;
@@ -159,6 +159,23 @@
             </div>
           {/if}
           {#if session.isHost && member.id !== session.peerId}
+            <button
+              onclick={() => moderateMember(member.id, !member.muted, member.deafened)}
+              class="rounded-md p-1 text-muted opacity-0 transition-all hover:bg-surface-3 hover:text-text group-hover:opacity-100"
+              title={member.muted ? 'Unmute member' : 'Mute member'}
+              aria-label={member.muted ? 'Unmute member' : 'Mute member'}
+            >
+              <Icon path={mdiMicrophoneOff} size={16} />
+            </button>
+            <button
+              onclick={() =>
+                moderateMember(member.id, member.deafened ? false : true, !member.deafened)}
+              class="rounded-md p-1 text-muted opacity-0 transition-all hover:bg-surface-3 hover:text-text group-hover:opacity-100"
+              title={member.deafened ? 'Undeafen member' : 'Deafen member'}
+              aria-label={member.deafened ? 'Undeafen member' : 'Deafen member'}
+            >
+              <Icon path={mdiHeadphonesOff} size={16} />
+            </button>
             <button
               onclick={() => kickMember(member.id)}
               class="rounded-md p-1 text-muted opacity-0 transition-all hover:bg-danger/10 hover:text-danger group-hover:opacity-100"

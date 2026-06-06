@@ -96,62 +96,76 @@
             <span class="text-xs text-muted">{formatTime(msg.timestamp)}</span>
           </div>
 
-          {#if hasBody}
-            <div
-              class="inline-block max-w-full overflow-hidden rounded-xl text-sm leading-relaxed {mine
-                ? 'border border-bubble-self-border bg-bubble-self text-text'
-                : 'bg-surface-2'}"
-            >
-              {#if msg.text}
-                <p class="whitespace-pre-wrap break-words px-3 py-2">{msg.text}</p>
-              {/if}
-              {#if msg.attachment}
-                {#if attachBlob}
-                  <MessageAttachment
-                    blob={attachBlob}
-                    name={msg.attachment.name}
-                    mime={msg.attachment.mime}
-                  />
-                {:else}
-                  <p class="px-3 py-2 text-xs text-muted">Receiving {msg.attachment.name}</p>
+          <div class="inline-flex max-w-full flex-col gap-0.5 {mine ? 'items-end' : 'items-start'}">
+            {#if hasBody}
+              <div
+                class="max-w-full overflow-hidden rounded-xl text-sm leading-relaxed {mine
+                  ? 'border border-bubble-self-border bg-bubble-self text-text'
+                  : 'bg-surface-2'}"
+              >
+                {#if msg.text}
+                  <p class="whitespace-pre-wrap break-words px-3 py-2">{msg.text}</p>
                 {/if}
+                {#if msg.attachment}
+                  {#if attachBlob}
+                    <MessageAttachment
+                      blob={attachBlob}
+                      name={msg.attachment.name}
+                      mime={msg.attachment.mime}
+                    />
+                  {:else}
+                    <p class="px-3 py-2 text-xs text-muted">Receiving {msg.attachment.name}</p>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+
+            <div class="flex max-w-full flex-wrap items-center gap-0.5">
+              {#if mine}
+                <button
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    picker = picker === msg.id ? null : msg.id;
+                  }}
+                  class="rounded-full p-1 text-muted opacity-0 transition-opacity hover:bg-surface-3 hover:text-text group-hover:opacity-100"
+                  title="Add reaction"
+                  aria-label="Add reaction"
+                >
+                  <Icon path={mdiEmoticonOutline} size={16} />
+                </button>
+              {/if}
+              {#each reactions as r (r.emoji)}
+                <button
+                  onclick={() => react(msg.id, r.emoji)}
+                  class="flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors {r.peerIds.includes(
+                    session.peerId,
+                  )
+                    ? 'border-accent bg-accent/15 text-accent'
+                    : 'border-border bg-surface-2 text-muted hover:bg-surface-3'}"
+                >
+                  <span>{r.emoji}</span>
+                  <span>{r.peerIds.length}</span>
+                </button>
+              {/each}
+              {#if !mine}
+                <button
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    picker = picker === msg.id ? null : msg.id;
+                  }}
+                  class="rounded-full p-1 text-muted opacity-0 transition-opacity hover:bg-surface-3 hover:text-text group-hover:opacity-100"
+                  title="Add reaction"
+                  aria-label="Add reaction"
+                >
+                  <Icon path={mdiEmoticonOutline} size={16} />
+                </button>
               {/if}
             </div>
-          {/if}
-
-          <div
-            class="mt-1.5 flex max-w-full flex-wrap items-center gap-1 {mine ? 'justify-end' : ''}"
-          >
-            {#each reactions as r (r.emoji)}
-              <button
-                onclick={() => react(msg.id, r.emoji)}
-                class="flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors {r.peerIds.includes(
-                  session.peerId,
-                )
-                  ? 'border-accent bg-accent/15 text-accent'
-                  : 'border-border bg-surface-2 text-muted hover:bg-surface-3'}"
-              >
-                <span>{r.emoji}</span>
-                <span>{r.peerIds.length}</span>
-              </button>
-            {/each}
-            <button
-              onclick={(e) => {
-                e.stopPropagation();
-                picker = picker === msg.id ? null : msg.id;
-              }}
-              class="rounded-full p-1 text-muted opacity-0 transition-opacity hover:bg-surface-3 hover:text-text group-hover:opacity-100"
-              title="Add reaction"
-            >
-              <Icon path={mdiEmoticonOutline} size={16} />
-            </button>
           </div>
         </div>
       </div>
     {:else}
-      <p class="mt-8 text-center text-sm text-muted">
-        Messages are end to end encrypted and peer to peer. Say hello.
-      </p>
+      <p class="mt-8 text-center text-sm text-muted">E2EE and P2P messaging. Say hello.</p>
     {/each}
   </div>
 

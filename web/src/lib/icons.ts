@@ -37,4 +37,6 @@ export {
   mdiShieldLock,
   mdiLogin,
   mdiAccessPointNetwork,
+  mdiCloudOffOutline,
+  mdiRefresh,
 } from '@mdi/js';

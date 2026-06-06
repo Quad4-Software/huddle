@@ -13,22 +13,24 @@
     mdiVolumeOff,
   } from '../icons';
   import { session } from '../stores/session.svelte';
-  import { settings } from '../stores/settings.svelte';
+  import { settings, outputGain } from '../stores/settings.svelte';
   import { setSharePaused, toggleShareAudioMuted } from '../session-controller';
   import { setOutputDevice } from '../webrtc/audio';
   import { bindScreenVideo, hasScreenAudio } from '../screen-video';
 
   let mainVideo: HTMLVideoElement | undefined = $state();
 
-  function audioAction(el: HTMLAudioElement, stream: MediaStream) {
-    el.srcObject = stream;
+  function audioAction(el: HTMLAudioElement, params: { stream: MediaStream; gain: number }) {
+    el.srcObject = params.stream;
+    el.volume = params.gain;
     el.play().catch(() => {});
     if (settings.outputDeviceId) {
       setOutputDevice(el, settings.outputDeviceId).catch(() => {});
     }
     return {
-      update(s: MediaStream) {
-        el.srcObject = s;
+      update(next: { stream: MediaStream; gain: number }) {
+        el.srcObject = next.stream;
+        el.volume = next.gain;
         el.play().catch(() => {});
       },
       destroy() {
@@ -36,6 +38,8 @@
       },
     };
   }
+
+  const outputLevel = $derived(outputGain(session.deafened));
 
   const allShares = $derived(session.allActiveShares);
 
@@ -283,10 +287,11 @@
 
 {#each Object.entries(session.remoteVoiceStreams) as [peerId, stream] (peerId)}
   {#if stream.getAudioTracks().length > 0}
-    <audio use:audioAction={stream} class="hidden" autoplay></audio>
+    <audio use:audioAction={{ stream, gain: outputLevel }} class="hidden" autoplay></audio>
   {/if}
 {/each}
 
 {#if focused && focusedHasAudio && !focusedPaused && !session.isShareAudioMuted(focused.peerId)}
-  <audio use:audioAction={focused.stream} class="hidden" autoplay></audio>
+  <audio use:audioAction={{ stream: focused.stream, gain: outputLevel }} class="hidden" autoplay
+  ></audio>
 {/if}

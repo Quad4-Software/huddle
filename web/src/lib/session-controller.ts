@@ -1,15 +1,20 @@
 import { Signaling } from './ws/signaling';
 import { Mesh } from './webrtc/mesh';
 import { importRoomKey, importSigningKey } from './crypto/e2e';
-import { getMicStream, createAnalyser, isSpeaking } from './webrtc/audio';
+import { getMicStream } from './webrtc/audio';
+import { createMicPipeline, type MicPipeline } from './webrtc/mic-pipeline';
 import { getScreenStream } from './webrtc/screen';
 import { session } from './stores/session.svelte';
-import { settings } from './stores/settings.svelte';
+import { settings, voiceActivationThreshold } from './stores/settings.svelte';
 import { loading } from './stores/loading.svelte';
+import { connection } from './stores/connection.svelte';
 import { buildInviteUrl } from './invite';
 import { randomDisplayName } from './random-name';
 import { solvePow } from './pow';
+import { RECONNECT_MAX_ATTEMPTS, reconnectDelayMs, sleep } from './reconnect';
 import type { RoomState, ControlMessage } from './types';
+import { isTypingTarget } from './keybind';
+import { isSpeaking } from './webrtc/audio';
 import {
   cleanBounded,
   MAX_CHAT_MESSAGE_LENGTH,
@@ -24,15 +29,18 @@ export { buildInviteUrl };
 let signaling: Signaling | null = null;
 let mesh: Mesh | null = null;
 let micStream: MediaStream | null = null;
-let audioCtx: AudioContext | null = null;
+let micPipeline: MicPipeline | null = null;
 let analyser: AnalyserNode | null = null;
 let speakTimer: ReturnType<typeof setInterval> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let lastSpeaking = false;
+let pttActive = false;
+let pttListenersInstalled = false;
 let signalingWired = false;
 let meshPeerId: string | null = null;
 let intentionalLeave = false;
 let reconnecting = false;
+let reconnectAbort = false;
 
 function peerResumeKey(roomId: string) {
   return `huddle:peer:${roomId}`;
@@ -51,6 +59,7 @@ function applyJoinedState(peerId: string, room: RoomState, resumeToken?: string)
   session.setRoom(room);
   session.connected = true;
   session.error = '';
+  connection.setOnline();
   sessionStorage.setItem(peerResumeKey(room.id), peerId);
   if (resumeToken) {
     sessionStorage.setItem(peerResumeTokenKey(room.id), resumeToken);
@@ -154,8 +163,14 @@ function wireSignaling() {
 
     try {
       micStream = await getMicStream(settings.inputDeviceId || undefined);
-      await mesh.addLocalAudio(micStream);
+      const processed = createMicPipeline(micStream);
+      micPipeline = processed.pipeline;
+      micPipeline.setInputVolume(settings.inputVolume);
+      analyser = processed.analyser;
+      await mesh.addLocalAudio(processed.stream);
+      applyMicTransmit();
       startVoiceActivity();
+      ensurePttListeners();
     } catch {
       session.error = 'Microphone access denied';
     }
@@ -228,6 +243,11 @@ function wireSignaling() {
       deafened: p.deafened,
       speaking: p.speaking,
     });
+    if (p.peerId === session.peerId) {
+      session.muted = p.muted;
+      session.deafened = p.deafened;
+      applyMicTransmit();
+    }
   });
 
   signaling.on('pong', (payload) => {
@@ -238,28 +258,56 @@ function wireSignaling() {
   signaling.on('close', () => {
     session.meshReady = false;
     session.ping = null;
-    if (intentionalLeave || reconnecting) {
-      if (intentionalLeave) {
-        session.connected = false;
-      }
+    if (intentionalLeave) {
+      session.connected = false;
+      connection.reset();
       return;
     }
+    if (reconnecting) return;
+
     const roomId = location.pathname.match(/^\/r\/([^/]+)/)?.[1];
     const invite = new URLSearchParams(location.search).get('t');
     const key = location.hash.match(/key=([^&]+)/)?.[1];
     if (!roomId || !invite || !key || !session.room) {
       session.connected = false;
+      connection.reset();
       return;
     }
+
     session.invite = invite;
     session.roomKey = key;
+    session.connected = false;
     void reconnectSession(roomId, invite);
   });
 }
 
+function teardownTransport() {
+  if (speakTimer) clearInterval(speakTimer);
+  if (pingTimer) clearInterval(pingTimer);
+  speakTimer = null;
+  pingTimer = null;
+  micPipeline?.close();
+  micPipeline = null;
+  micStream?.getTracks().forEach((t) => t.stop());
+  micStream = null;
+  analyser = null;
+  mesh?.destroy();
+  mesh = null;
+  meshPeerId = null;
+  lastSpeaking = false;
+  pttActive = false;
+  session.meshReady = false;
+  session.ping = null;
+}
+
 async function reconnectSession(roomId: string, invite: string) {
+  if (intentionalLeave || reconnectAbort) return;
   if (reconnecting) return;
+
   reconnecting = true;
+  reconnectAbort = false;
+  connection.startReconnect();
+
   const password = (sessionStorage.getItem(peerPasswordKey(roomId)) ?? '').slice(
     0,
     MAX_PASSWORD_LENGTH,
@@ -268,19 +316,60 @@ async function reconnectSession(roomId: string, invite: string) {
     settings.displayName ||
     session.room?.members.find((m) => m.id === session.peerId)?.name ||
     'Guest';
-  try {
-    mesh?.destroy();
-    mesh = null;
-    meshPeerId = null;
-    signaling = null;
-    signalingWired = false;
-    await ensureSignaling();
-    await joinRoom(roomId, invite, password, name);
-  } catch {
-    session.connected = false;
-  } finally {
-    reconnecting = false;
+
+  for (let attempt = 1; attempt <= RECONNECT_MAX_ATTEMPTS; attempt++) {
+    if (intentionalLeave || reconnectAbort) break;
+
+    connection.setAttempt(attempt);
+    connection.setDetail(
+      attempt === 1
+        ? 'Restoring connection to the server...'
+        : `Retrying connection (${attempt}/${RECONNECT_MAX_ATTEMPTS})...`,
+    );
+
+    try {
+      teardownTransport();
+      signaling?.close();
+      signaling = null;
+      signalingWired = false;
+
+      connection.setDetail('Connecting to server...');
+      await ensureSignaling();
+      await joinRoom(roomId, invite, password, name, { silent: true });
+
+      reconnecting = false;
+      return;
+    } catch {
+      if (attempt < RECONNECT_MAX_ATTEMPTS && !intentionalLeave && !reconnectAbort) {
+        const wait = reconnectDelayMs(attempt);
+        connection.setDetail(`Waiting ${Math.ceil(wait / 1000)}s before retry...`);
+        await sleep(wait);
+      }
+    }
   }
+
+  if (!intentionalLeave && !reconnectAbort) {
+    connection.setOffline();
+    session.connected = false;
+  }
+  reconnecting = false;
+}
+
+export function retryConnection() {
+  if (reconnecting) return;
+
+  const roomId = session.room?.id ?? location.pathname.match(/^\/r\/([^/]+)/)?.[1];
+  const invite = session.invite || new URLSearchParams(location.search).get('t') || '';
+  const key = session.roomKey || location.hash.match(/key=([^&]+)/)?.[1] || '';
+  if (!roomId || !invite || !key) {
+    connection.setOffline();
+    return;
+  }
+
+  session.invite = invite;
+  session.roomKey = key;
+  reconnectAbort = false;
+  void reconnectSession(roomId, invite);
 }
 
 export async function createRoom(name: string, password: string): Promise<void> {
@@ -378,9 +467,10 @@ export async function joinRoom(
   invite: string,
   password: string,
   name: string,
-  options?: { powStart?: number; powEnd?: number },
+  options?: { powStart?: number; powEnd?: number; silent?: boolean },
 ): Promise<void> {
-  if (!loading.active) loading.start('joining');
+  const silent = options?.silent ?? false;
+  if (!silent && !loading.active) loading.start('joining');
   await ensureSignaling();
   const powStart = options?.powStart ?? 5;
   const powEnd = options?.powEnd ?? 85;
@@ -400,7 +490,7 @@ export async function joinRoom(
 
   return new Promise((resolve, reject) => {
     const fail = (err: unknown) => {
-      loading.stop();
+      if (!silent) loading.stop();
       reject(err instanceof Error ? err : new Error(String(err)));
     };
 
@@ -412,17 +502,37 @@ export async function joinRoom(
       if (cleanPassword) {
         sessionStorage.setItem(peerPasswordKey(roomId), cleanPassword);
       }
-      loading.stop();
+      if (!silent) loading.stop();
+      else connection.setDetail('');
       resolve();
     });
     signaling!.once('error', (payload) => {
       fail(new Error((payload as { message: string }).message));
     });
-    loading.beginPow(powStart, powEnd);
-    solvePow('join', (progress) => loading.setPowProgress(progress))
+
+    const onPowProgress = (progress: number) => {
+      if (silent) {
+        connection.setDetail(`Solving PoW... ${Math.round(progress)}%`);
+      } else {
+        loading.setPhase('pow');
+        loading.setPowProgress(progress);
+      }
+    };
+
+    if (silent) {
+      connection.setDetail('Solving PoW...');
+    } else {
+      loading.beginPow(powStart, powEnd);
+    }
+
+    solvePow('join', onPowProgress)
       .then((pow) => {
-        loading.advanceTo(powEnd);
-        loading.setPhase('joining');
+        if (silent) {
+          connection.setDetail('Rejoining room...');
+        } else {
+          loading.advanceTo(powEnd);
+          loading.setPhase('joining');
+        }
         signaling!.send('join', {
           roomId,
           invite,
@@ -442,20 +552,89 @@ export function kickMember(peerId: string) {
   signaling?.send('kick', { peerId });
 }
 
+export function moderateMember(peerId: string, muted: boolean, deafened: boolean) {
+  if (!session.isHost || peerId === session.peerId) return;
+  const nextDeafened = deafened;
+  const nextMuted = muted || nextDeafened;
+  signaling?.send('moderate_member', { peerId, muted: nextMuted, deafened: nextDeafened });
+}
+
+function ensurePttListeners() {
+  if (pttListenersInstalled) return;
+  pttListenersInstalled = true;
+  window.addEventListener('keydown', onPttKeyDown);
+  window.addEventListener('keyup', onPttKeyUp);
+  window.addEventListener('blur', onPttBlur);
+}
+
+function removePttListeners() {
+  if (!pttListenersInstalled) return;
+  pttListenersInstalled = false;
+  window.removeEventListener('keydown', onPttKeyDown);
+  window.removeEventListener('keyup', onPttKeyUp);
+  window.removeEventListener('blur', onPttBlur);
+  pttActive = false;
+}
+
+function onPttKeyDown(e: KeyboardEvent) {
+  if (settings.inputMode !== 'pushToTalk') return;
+  if (e.code !== settings.pushToTalkKey) return;
+  if (e.repeat || isTypingTarget(e.target)) return;
+  e.preventDefault();
+  pttActive = true;
+  applyMicTransmit();
+}
+
+function onPttKeyUp(e: KeyboardEvent) {
+  if (settings.inputMode !== 'pushToTalk') return;
+  if (e.code !== settings.pushToTalkKey) return;
+  pttActive = false;
+  applyMicTransmit();
+}
+
+function onPttBlur() {
+  if (!pttActive) return;
+  pttActive = false;
+  applyMicTransmit();
+}
+
+function applyMicTransmit() {
+  if (session.muted) {
+    mesh?.setMuted(true);
+    if (lastSpeaking) {
+      lastSpeaking = false;
+      sendMemberState(false);
+    }
+    return;
+  }
+  if (settings.inputMode === 'pushToTalk') {
+    mesh?.setMuted(!pttActive);
+    if (pttActive !== lastSpeaking) {
+      lastSpeaking = pttActive;
+      sendMemberState(pttActive);
+    }
+    return;
+  }
+  mesh?.setMuted(false);
+}
+
+export function applyAudioSettings() {
+  micPipeline?.setInputVolume(settings.inputVolume);
+  applyMicTransmit();
+}
+
 function startVoiceActivity() {
-  if (!micStream) return;
-  audioCtx = new AudioContext();
-  const { analyser: a } = createAnalyser(audioCtx, micStream);
-  analyser = a;
+  if (!analyser) return;
+  if (speakTimer) clearInterval(speakTimer);
   speakTimer = setInterval(() => {
-    if (!analyser || session.muted) {
+    if (!analyser || session.muted || settings.inputMode === 'pushToTalk') {
       if (lastSpeaking) {
         lastSpeaking = false;
         sendMemberState(false);
       }
       return;
     }
-    const speaking = isSpeaking(analyser);
+    const speaking = isSpeaking(analyser, voiceActivationThreshold());
     if (speaking !== lastSpeaking) {
       lastSpeaking = speaking;
       sendMemberState(speaking);
@@ -486,7 +665,7 @@ function sendMemberState(speaking: boolean) {
 
 export function toggleMute() {
   session.muted = !session.muted;
-  mesh?.setMuted(session.muted);
+  applyMicTransmit();
   if (session.muted) lastSpeaking = false;
   sendMemberState(false);
 }
@@ -494,7 +673,7 @@ export function toggleMute() {
 export function toggleDeafen() {
   session.deafened = !session.deafened;
   if (session.deafened) session.muted = true;
-  mesh?.setMuted(session.muted);
+  applyMicTransmit();
   lastSpeaking = false;
   sendMemberState(false);
 }
@@ -577,7 +756,10 @@ export function stopShare() {
 function cleanupSession() {
   if (speakTimer) clearInterval(speakTimer);
   if (pingTimer) clearInterval(pingTimer);
-  audioCtx?.close();
+  speakTimer = null;
+  pingTimer = null;
+  micPipeline?.close();
+  micPipeline = null;
   micStream?.getTracks().forEach((t) => t.stop());
   session.localScreen?.getTracks().forEach((t) => t.stop());
   mesh?.destroy();
@@ -587,7 +769,10 @@ function cleanupSession() {
   signaling = null;
   signalingWired = false;
   micStream = null;
+  analyser = null;
   lastSpeaking = false;
+  pttActive = false;
+  removePttListeners();
 }
 
 function clearPeerResume(roomId?: string) {
@@ -597,31 +782,39 @@ function clearPeerResume(roomId?: string) {
 }
 
 function forceLeaveSession(message: string) {
+  reconnectAbort = true;
   intentionalLeave = true;
   clearPeerResume(session.room?.id);
   cleanupSession();
   session.reset();
   session.error = message;
+  connection.reset();
   history.replaceState(null, '', '/');
   intentionalLeave = false;
 }
 
 export function leaveSession() {
+  reconnectAbort = true;
   intentionalLeave = true;
   clearPeerResume(session.room?.id);
   signaling?.send('leave');
   cleanupSession();
   session.reset();
+  connection.reset();
   history.replaceState(null, '', '/');
   intentionalLeave = false;
 }
 
 export async function refreshMic() {
+  micPipeline?.close();
+  micPipeline = null;
   micStream?.getTracks().forEach((t) => t.stop());
   micStream = await getMicStream(settings.inputDeviceId || undefined);
-  await mesh?.addLocalAudio(micStream);
-  if (speakTimer) {
-    audioCtx?.close();
-    startVoiceActivity();
-  }
+  const processed = createMicPipeline(micStream);
+  micPipeline = processed.pipeline;
+  micPipeline.setInputVolume(settings.inputVolume);
+  analyser = processed.analyser;
+  await mesh?.addLocalAudio(processed.stream);
+  applyMicTransmit();
+  startVoiceActivity();
 }

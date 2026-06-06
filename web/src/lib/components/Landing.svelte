@@ -11,7 +11,7 @@
 
   let { onSettings }: { onSettings: () => void } = $props();
 
-  let name = $state('');
+  let name = $state(randomRoomName());
   let password = $state('');
   let error = $state('');
 

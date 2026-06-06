@@ -21,15 +21,23 @@ describe('Landing', () => {
     await fireEvent.input(screen.getByPlaceholderText('Alex'), {
       target: { value: 'Ada' },
     });
+    await fireEvent.input(screen.getByPlaceholderText('Team sync'), {
+      target: { value: '   ' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Create room' }));
     expect(screen.getByText('Enter a room name')).toBeInTheDocument();
     expect(createRoom).not.toHaveBeenCalled();
   });
 
+  it('starts with a random room name', () => {
+    render(Landing, { onSettings: () => {} });
+    const input = screen.getByPlaceholderText('Team sync') as HTMLInputElement;
+    expect(input.value.length).toBeGreaterThan(0);
+  });
+
   it('fills a random room name from the icon button', async () => {
     render(Landing, { onSettings: () => {} });
     const input = screen.getByPlaceholderText('Team sync') as HTMLInputElement;
-    expect(input.value).toBe('');
     await fireEvent.click(screen.getByRole('button', { name: 'Random room name' }));
     expect(input.value.length).toBeGreaterThan(0);
   });

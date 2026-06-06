@@ -1,10 +1,12 @@
 <script lang="ts">
   import Landing from './lib/components/Landing.svelte';
   import RoomView from './lib/components/RoomView.svelte';
-  import SettingsPage from './lib/components/SettingsPage.svelte';
+  import SettingsModal from './lib/components/SettingsModal.svelte';
   import LoadingScreen from './lib/components/LoadingScreen.svelte';
+  import ConnectionLost from './lib/components/ConnectionLost.svelte';
   import { session } from './lib/stores/session.svelte';
   import { loading } from './lib/stores/loading.svelte';
+  import { connection } from './lib/stores/connection.svelte';
   import { joinFromUrl } from './lib/session-controller';
   import { SITE_NAME, canonicalUrl, pageDescription, pageTitle, robotsDirective } from './lib/seo';
   import type { View } from './lib/types';
@@ -21,10 +23,9 @@
 
   let view = $state<View>('landing');
   let booting = $state(inviteBoot);
+  let showSettings = $state(false);
 
-  const seoView = $derived(
-    view === 'settings' ? 'settings' : view === 'room' && session.connected ? 'room' : 'landing',
-  );
+  const seoView = $derived(view === 'room' && session.connected ? 'room' : 'landing');
   const seoRoomName = $derived(session.room?.name);
   const seoTitle = $derived(pageTitle(seoView, seoRoomName));
   const seoDescription = $derived(pageDescription(seoView, seoRoomName));
@@ -51,11 +52,11 @@
   });
 
   function openSettings() {
-    view = 'settings';
+    showSettings = true;
   }
 
-  function backFromSettings() {
-    view = session.connected ? 'room' : 'landing';
+  function closeSettings() {
+    showSettings = false;
   }
 </script>
 
@@ -77,10 +78,14 @@
 
 {#if booting || loading.active}
   <LoadingScreen />
-{:else if view === 'settings'}
-  <SettingsPage onBack={backFromSettings} />
+{:else if session.room && connection.status !== 'online'}
+  <ConnectionLost />
 {:else if view === 'room' && session.connected}
   <RoomView onSettings={openSettings} />
 {:else}
   <Landing onSettings={openSettings} />
+{/if}
+
+{#if showSettings}
+  <SettingsModal onClose={closeSettings} />
 {/if}

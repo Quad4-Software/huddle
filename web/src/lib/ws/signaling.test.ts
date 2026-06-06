@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Signaling } from './signaling';
+import { decodeFrame, Signaling } from './signaling';
+import { encodeFrame, encodeMessage, Msg } from '../wire/codec';
 
 class MockWebSocket {
   static OPEN = 1;
   readyState = 0;
-  sent: string[] = [];
+  binaryType = 'arraybuffer';
+  sent: ArrayBuffer[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  onmessage: ((ev: { data: string }) => void) | null = null;
+  onmessage: ((ev: { data: ArrayBuffer }) => void) | null = null;
   onclose: (() => void) | null = null;
 
   constructor(public url: string) {
@@ -17,7 +19,7 @@ class MockWebSocket {
     });
   }
 
-  send(data: string) {
+  send(data: ArrayBuffer) {
     this.sent.push(data);
   }
 
@@ -26,9 +28,41 @@ class MockWebSocket {
     this.onclose?.();
   }
 
-  simulateMessage(payload: unknown) {
-    this.onmessage?.({ data: JSON.stringify(payload) });
+  simulateMessage(type: string, payload: unknown) {
+    let frame: Uint8Array;
+    if (type === 'joined') {
+      const p = payload as { peerId: string };
+      const body = encodeJoinedTestPayload(p.peerId);
+      frame = encodeFrame(Msg.JOINED, body);
+    } else {
+      frame = encodeMessage(type, payload);
+    }
+    this.onmessage?.({
+      data: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
+    });
   }
+}
+
+function encodeJoinedTestPayload(peerId: string) {
+  const enc = new TextEncoder();
+  const parts: number[] = [];
+  const append = (s: string) => {
+    const b = enc.encode(s);
+    parts.push(
+      (b.length >>> 24) & 255,
+      (b.length >>> 16) & 255,
+      (b.length >>> 8) & 255,
+      b.length & 255,
+      ...b,
+    );
+  };
+  append(peerId);
+  append('');
+  append('room');
+  append('room');
+  append('');
+  parts.push(0, 0, 0, 0, 0, 0);
+  return Uint8Array.from(parts);
 }
 
 describe('Signaling', () => {
@@ -69,19 +103,22 @@ describe('Signaling', () => {
       seen.push('once');
     });
 
-    ws.simulateMessage({ type: 'joined', payload: { peerId: 'peer-a' } });
-    ws.simulateMessage({ type: 'joined', payload: { peerId: 'peer-b' } });
+    ws.simulateMessage('joined', { peerId: 'peer-a' });
+    ws.simulateMessage('joined', { peerId: 'peer-b' });
 
+    await Promise.resolve();
     expect(seen).toEqual(['peer-a', 'once', 'peer-b']);
   });
 
-  it('serializes outbound messages', async () => {
+  it('serializes outbound messages as binary frames', async () => {
     const signaling = new Signaling('ws://localhost:8080/ws');
     await signaling.connect();
     await Promise.resolve();
     signaling.send('join', { roomId: 'room1', name: 'Ada' });
-    expect(instances[0]?.sent).toEqual([
-      JSON.stringify({ type: 'join', payload: { roomId: 'room1', name: 'Ada' } }),
-    ]);
+    const sent = instances[0]?.sent[0];
+    expect(sent).toBeTruthy();
+    const frame = decodeFrame(sent!);
+    expect(frame.type).toBe(Msg.JOIN);
+    expect(frame.payload.length).toBeGreaterThan(0);
   });
 });

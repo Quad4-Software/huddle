@@ -1,11 +1,11 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
 	"huddle/internal/room"
+	"huddle/internal/wire"
 )
 
 func BenchmarkMarshalSignal(b *testing.B) {
@@ -30,7 +30,7 @@ func BenchmarkMarshalICE(b *testing.B) {
 		From:      "peer-a",
 		Nonce:     "nonce-123",
 		Sig:       "sig-456",
-		Candidate: json.RawMessage(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`),
+		Candidate: []byte(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`),
 	}
 	b.ReportAllocs()
 	for b.Loop() {
@@ -45,7 +45,7 @@ func BenchmarkValidSignalICE(b *testing.B) {
 		To:        "peer-b",
 		Nonce:     "nonce-123",
 		Sig:       "sig-456",
-		Candidate: json.RawMessage(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`),
+		Candidate: []byte(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`),
 	}
 	b.ReportAllocs()
 	for b.Loop() {
@@ -56,10 +56,10 @@ func BenchmarkValidSignalICE(b *testing.B) {
 }
 
 func BenchmarkMarshalPingPong(b *testing.B) {
-	raw := json.RawMessage(`{"t":1234567890}`)
+	raw := wire.EncodePing(1234567890)
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := marshalWithPayload(TypePong, raw); err != nil {
+		if _, err := marshalPong(raw); err != nil {
 			b.Fatal(err)
 		}
 	}

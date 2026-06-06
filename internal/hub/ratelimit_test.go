@@ -1,11 +1,11 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
 	"huddle/internal/ratelimit"
+	"huddle/internal/wire"
 )
 
 func TestHubRateLimitsCreateRoom(t *testing.T) {
@@ -25,8 +25,8 @@ func TestHubRateLimitsCreateRoom(t *testing.T) {
 	if msg.Type != TypeError {
 		t.Fatalf("expected error, got %s", msg.Type)
 	}
-	var payload ErrorPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeErrorPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.Message != "rate limit exceeded" {
@@ -59,11 +59,30 @@ func TestHubRateLimitsJoin(t *testing.T) {
 		Name:   "Again",
 	})
 	msg := client.readType(TypeError)
-	var payload ErrorPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeErrorPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.Message != "rate limit exceeded" {
 		t.Fatalf("unexpected error: %s", payload.Message)
+	}
+}
+
+func TestMarshalPongFrame(t *testing.T) {
+	raw := wire.EncodePing(42)
+	data, err := marshalPong(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Type != TypePong {
+		t.Fatalf("expected pong, got %s", msg.Type)
+	}
+	pong, err := decodePingPayload(msg.Payload)
+	if err != nil || pong.T != 42 {
+		t.Fatalf("unexpected pong payload: %+v err=%v", pong, err)
 	}
 }

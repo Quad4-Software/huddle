@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
 )
 
@@ -23,8 +22,8 @@ func TestHubHostCanModerateMember(t *testing.T) {
 		Muted:  true,
 	})
 	update := guest.readType(TypeMemberUpdate)
-	var payload MemberUpdatePayload
-	if err := json.Unmarshal(update.Payload, &payload); err != nil {
+	payload, err := decodeMemberUpdatePayload(update.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.PeerID != guestJoined.PeerID || !payload.Muted || payload.Deafened {
@@ -50,8 +49,8 @@ func TestHubNonHostCannotModerate(t *testing.T) {
 		Muted:  true,
 	})
 	msg := guest.readType(TypeError)
-	var payload ErrorPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeErrorPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.Message != "only the host can moderate members" {

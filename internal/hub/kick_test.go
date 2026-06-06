@@ -1,8 +1,9 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
+
+	"huddle/internal/room"
 )
 
 func createAndJoinHost(t *testing.T, url string) (*wsClient, CreatedPayload, JoinedPayload) {
@@ -45,16 +46,13 @@ func TestHubHostCanKickMember(t *testing.T) {
 	_ = host.readType(TypePeerLeft)
 
 	state := host.readType(TypeRoomState)
-	var roomState struct {
-		Members []struct {
-			ID string `json:"id"`
-		} `json:"members"`
-	}
-	if err := json.Unmarshal(state.Payload, &roomState); err != nil {
+	roomState, err := decodeRoomStatePayload(state.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(roomState.Members) != 1 || roomState.Members[0].ID != hostJoined.PeerID {
-		t.Fatalf("expected only host to remain, got %+v", roomState.Members)
+	members, _ := roomState["members"].([]room.Member)
+	if len(members) != 1 || members[0].ID != hostJoined.PeerID {
+		t.Fatalf("expected only host to remain, got %+v", members)
 	}
 }
 
@@ -73,8 +71,8 @@ func TestHubNonHostCannotKick(t *testing.T) {
 
 	guest.send(TypeKick, KickPayload{PeerID: hostJoined.PeerID})
 	msg := guest.readType(TypeError)
-	var payload ErrorPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeErrorPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.Message != "only the host can kick members" {

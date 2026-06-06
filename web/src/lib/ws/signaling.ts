@@ -1,3 +1,5 @@
+import { decodeMessage, encodeMessage, encodeFrame, decodeFrame, Msg } from '../wire/codec';
+
 type Handler = (payload: unknown) => void;
 
 export class Signaling {
@@ -26,15 +28,19 @@ export class Signaling {
     this.disconnect();
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.url);
+      this.ws.binaryType = 'arraybuffer';
       this.ws.onopen = () => resolve();
       this.ws.onerror = () => reject(new Error('connection failed'));
       this.ws.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data as string) as { type: string; payload?: unknown };
-          for (const fn of this.handlers.get(msg.type) ?? []) {
-            fn(msg.payload);
-          }
-        } catch {}
+        void (async () => {
+          try {
+            const data = await toArrayBuffer(ev.data);
+            const msg = decodeMessage(data);
+            for (const fn of this.handlers.get(msg.type) ?? []) {
+              fn(msg.payload);
+            }
+          } catch {}
+        })();
       };
       this.ws.onclose = () => {
         for (const fn of this.handlers.get('close') ?? []) {
@@ -68,7 +74,7 @@ export class Signaling {
 
   send(type: string, payload?: unknown) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type, payload }));
+      this.ws.send(encodeMessage(type, payload));
     }
   }
 
@@ -77,3 +83,11 @@ export class Signaling {
     this.handlers.clear();
   }
 }
+
+async function toArrayBuffer(data: unknown): Promise<ArrayBuffer> {
+  if (data instanceof ArrayBuffer) return data;
+  if (data instanceof Blob) return data.arrayBuffer();
+  throw new Error('unsupported websocket payload');
+}
+
+export { decodeMessage, encodeMessage, encodeFrame, decodeFrame, Msg };

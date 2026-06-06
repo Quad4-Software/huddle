@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +78,7 @@ func (c *wsClient) send(t MessageType, payload any) {
 	if err != nil {
 		c.t.Fatalf("marshal failed: %v", err)
 	}
-	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	if err := c.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
 		c.t.Fatalf("write failed: %v", err)
 	}
 }
@@ -101,8 +100,8 @@ func (c *wsClient) readCreated() CreatedPayload {
 	if msg.Type != TypeCreated {
 		c.t.Fatalf("expected created, got %s", msg.Type)
 	}
-	var payload CreatedPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeCreatedPayload(msg.Payload)
+	if err != nil {
 		c.t.Fatalf("decode created: %v", err)
 	}
 	return payload
@@ -110,8 +109,8 @@ func (c *wsClient) readCreated() CreatedPayload {
 
 func (c *wsClient) readJoined() JoinedPayload {
 	msg := c.readType(TypeJoined)
-	var payload JoinedPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeJoinedPayload(msg.Payload)
+	if err != nil {
 		c.t.Fatalf("decode joined: %v", err)
 	}
 	return payload
@@ -124,7 +123,11 @@ func (c *wsClient) readType(want MessageType) Message {
 			return msg
 		}
 		if msg.Type == TypeError {
-			c.t.Fatalf("unexpected error: %s", string(msg.Payload))
+			errPayload, err := decodeErrorPayload(msg.Payload)
+			if err != nil {
+				c.t.Fatalf("decode error: %v", err)
+			}
+			c.t.Fatalf("unexpected error: %s", errPayload.Message)
 		}
 	}
 }
@@ -186,8 +189,8 @@ func TestHubJoinRejectsInvalidPassword(t *testing.T) {
 	if msg.Type != TypeError {
 		t.Fatalf("expected error, got %s", msg.Type)
 	}
-	var payload ErrorPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+	payload, err := decodeErrorPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if payload.Message != "unable to join room" {
@@ -226,8 +229,8 @@ func TestHubRelaysSignalBetweenPeers(t *testing.T) {
 	})
 
 	msg := guest.readType(TypeOffer)
-	var relayed SignalPayload
-	if err := json.Unmarshal(msg.Payload, &relayed); err != nil {
+	relayed, err := decodeSignalPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if relayed.From != hostJoined.PeerID || relayed.SDP != "v=0" || relayed.Nonce != "nonce" || relayed.Sig != "sig" {
@@ -258,7 +261,7 @@ func TestHubRelaysICEWithRawCandidate(t *testing.T) {
 	guestJoined := guest.readJoined()
 	_ = host.readType(TypePeerJoined)
 
-	candidate := json.RawMessage(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`)
+	candidate := []byte(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`)
 	host.send(TypeICE, SignalPayload{
 		To:        guestJoined.PeerID,
 		Nonce:     "nonce",
@@ -267,8 +270,8 @@ func TestHubRelaysICEWithRawCandidate(t *testing.T) {
 	})
 
 	msg := guest.readType(TypeICE)
-	var relayed SignalPayload
-	if err := json.Unmarshal(msg.Payload, &relayed); err != nil {
+	relayed, err := decodeSignalPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if relayed.From != hostJoined.PeerID {
@@ -290,8 +293,8 @@ func TestHubPingPong(t *testing.T) {
 
 	client.send(TypePing, PingPayload{T: 12345})
 	msg := client.readType(TypePong)
-	var pong PingPayload
-	if err := json.Unmarshal(msg.Payload, &pong); err != nil {
+	pong, err := decodePingPayload(msg.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if pong.T != 12345 {
@@ -317,15 +320,12 @@ func TestHubRenameBroadcasts(t *testing.T) {
 
 	for range 5 {
 		msg := guest.readType(TypeRoomState)
-		var state struct {
-			Members []struct {
-				Name string `json:"name"`
-			} `json:"members"`
-		}
-		if err := json.Unmarshal(msg.Payload, &state); err != nil {
+		state, err := decodeRoomStatePayload(msg.Payload)
+		if err != nil {
 			t.Fatal(err)
 		}
-		for _, m := range state.Members {
+		members, _ := state["members"].([]room.Member)
+		for _, m := range members {
 			if m.Name == "Hostess" {
 				return
 			}

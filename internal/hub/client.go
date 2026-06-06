@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -68,7 +67,7 @@ func (c *Client) writePump() {
 				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			if err := c.Conn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -137,11 +136,4 @@ func (c *Client) sendCritical(data []byte) {
 
 func (c *Client) SendError(msg string) {
 	c.sendCriticalJSON(TypeError, ErrorPayload{Message: msg})
-}
-
-func decodePayload[T any](raw json.RawMessage, out *T) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	return json.Unmarshal(raw, out)
 }

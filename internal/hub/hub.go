@@ -4,7 +4,6 @@ package hub
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"log"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"huddle/internal/pow"
 	"huddle/internal/ratelimit"
 	"huddle/internal/room"
+	"huddle/internal/wire"
 )
 
 // Limits holds per-action rate limiters for hub operations.
@@ -162,7 +162,7 @@ func (h *Hub) handleMessage(c *Client, data []byte) {
 
 func (h *Hub) handleRename(c *Client, raw []byte) {
 	var p RenamePayload
-	if err := decodePayload(raw, &p); err != nil {
+	if err := decodePayloadTyped(TypeRename, raw, &p); err != nil {
 		return
 	}
 	name, ok := cleanBounded(p.Name, MaxDisplayNameLength)
@@ -177,10 +177,11 @@ func (h *Hub) handleRename(c *Client, raw []byte) {
 }
 
 func (h *Hub) handlePing(c *Client, raw []byte) {
-	if len(raw) == 0 || len(raw) > 64 {
+	t, err := wire.DecodePing(raw)
+	if err != nil {
 		return
 	}
-	data, err := marshalWithPayload(TypePong, raw)
+	data, err := marshalPong(wire.EncodePing(t))
 	if err != nil {
 		return
 	}
@@ -193,7 +194,7 @@ func (h *Hub) handleCreate(c *Client, raw []byte) {
 		return
 	}
 	var p CreateRoomPayload
-	if err := decodePayload(raw, &p); err != nil {
+	if err := decodePayloadTyped(TypeCreateRoom, raw, &p); err != nil {
 		c.SendError("invalid create request")
 		return
 	}
@@ -226,7 +227,7 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 		return
 	}
 	var p JoinPayload
-	if err := decodePayload(raw, &p); err != nil {
+	if err := decodePayloadTyped(TypeJoin, raw, &p); err != nil {
 		c.SendError("invalid join request")
 		return
 	}
@@ -317,7 +318,7 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 
 func (h *Hub) handleSignal(c *Client, msg Message) {
 	var p SignalPayload
-	if err := decodePayload(msg.Payload, &p); err != nil || !validSignal(msg.Type, p) {
+	if err := decodePayloadTyped(msg.Type, msg.Payload, &p); err != nil || !validSignal(msg.Type, p) {
 		return
 	}
 	p.From = c.ID
@@ -336,7 +337,7 @@ func (h *Hub) handleSignal(c *Client, msg Message) {
 
 func (h *Hub) handleMemberUpdate(c *Client, raw []byte) {
 	var p MemberUpdatePayload
-	if err := decodePayload(raw, &p); err != nil {
+	if err := decodePayloadTyped(TypeMemberUpdate, raw, &p); err != nil {
 		return
 	}
 	if r, err := h.rooms.Get(c.RoomID); err == nil {
@@ -348,7 +349,7 @@ func (h *Hub) handleMemberUpdate(c *Client, raw []byte) {
 
 func (h *Hub) handleKick(c *Client, raw []byte) {
 	var p KickPayload
-	if err := decodePayload(raw, &p); err != nil || p.PeerID == "" {
+	if err := decodePayloadTyped(TypeKick, raw, &p); err != nil || p.PeerID == "" {
 		c.SendError("invalid kick request")
 		return
 	}
@@ -380,7 +381,7 @@ func (h *Hub) handleKick(c *Client, raw []byte) {
 
 func (h *Hub) handleModerateMember(c *Client, raw []byte) {
 	var p ModerateMemberPayload
-	if err := decodePayload(raw, &p); err != nil || p.PeerID == "" {
+	if err := decodePayloadTyped(TypeModerateMember, raw, &p); err != nil || p.PeerID == "" {
 		c.SendError("invalid moderate request")
 		return
 	}
@@ -431,7 +432,7 @@ func (h *Hub) verifyPow(action string, payload *PowPayload) error {
 
 func (h *Hub) handleAddChannel(c *Client, raw []byte) {
 	var p AddChannelPayload
-	if err := decodePayload(raw, &p); err != nil {
+	if err := decodePayloadTyped(TypeAddChannel, raw, &p); err != nil {
 		return
 	}
 	id, okID := cleanBounded(p.ID, MaxChannelIDLength)
@@ -463,7 +464,7 @@ func validSignal(t MessageType, p SignalPayload) bool {
 	case TypeOffer, TypeAnswer:
 		return p.SDP != "" && len(p.SDP) <= MaxSDPLength
 	case TypeICE:
-		if len(p.Candidate) == 0 || !json.Valid(p.Candidate) {
+		if len(p.Candidate) == 0 || !wire.ValidCandidateBody(p.Candidate) {
 			return false
 		}
 		return len(p.Candidate) <= MaxCandidateLength

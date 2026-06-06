@@ -19,6 +19,14 @@
       : '',
   );
 
+  const peerCount = $derived((session.room?.members.length ?? 1) - 1);
+
+  function pingColor(ping: number) {
+    if (ping < 80) return 'text-online';
+    if (ping < 200) return 'text-away';
+    return 'text-danger';
+  }
+
   async function copyInvite() {
     if (!inviteUrl) return;
     await navigator.clipboard.writeText(inviteUrl);
@@ -35,7 +43,37 @@
       </div>
       <div class="leading-tight">
         <h1 class="text-sm font-semibold">{session.room?.name ?? 'Room'}</h1>
-        <p class="text-xs text-muted">{session.sortedMembers.length} in room</p>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+          <span>{session.sortedMembers.length} in room</span>
+          <span class="text-border">·</span>
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              class="h-1.5 w-1.5 shrink-0 rounded-full {session.connected
+                ? session.meshReady || peerCount === 0
+                  ? 'bg-online'
+                  : 'bg-away'
+                : 'bg-danger'}"
+              aria-hidden="true"
+            ></span>
+            {#if !session.connected}
+              disconnected
+            {:else if peerCount === 0}
+              waiting for others
+            {:else if session.meshReady}
+              voice connected
+            {:else}
+              connecting
+            {/if}
+          </span>
+          {#if session.ping !== null}
+            <span class="text-border">·</span>
+            <span class={pingColor(session.ping)}>{session.ping} ms</span>
+          {/if}
+          {#if session.sharing}
+            <span class="text-border">·</span>
+            <span class="text-accent">sharing</span>
+          {/if}
+        </div>
       </div>
     </div>
 

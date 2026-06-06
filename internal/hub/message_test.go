@@ -1,18 +1,12 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
+
+	"huddle/internal/wire"
 )
 
 func TestMarshalUnmarshalRoundTrip(t *testing.T) {
-	original := Message{
-		Type: TypeJoin,
-		Payload: json.RawMessage(
-			`{"roomId":"abc","invite":"token","name":"Ada"}`,
-		),
-	}
-
 	data, err := Marshal(TypeJoin, JoinPayload{
 		RoomID: "abc",
 		Invite: "token",
@@ -26,12 +20,12 @@ func TestMarshalUnmarshalRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Type != original.Type {
-		t.Fatalf("expected %s, got %s", original.Type, decoded.Type)
+	if decoded.Type != TypeJoin {
+		t.Fatalf("expected %s, got %s", TypeJoin, decoded.Type)
 	}
 
 	var payload JoinPayload
-	if err := json.Unmarshal(decoded.Payload, &payload); err != nil {
+	if err := decodePayloadTyped(TypeJoin, decoded.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if payload.RoomID != "abc" || payload.Name != "Ada" {
@@ -39,8 +33,11 @@ func TestMarshalUnmarshalRoundTrip(t *testing.T) {
 	}
 }
 
-func TestUnmarshalRejectsInvalidJSON(t *testing.T) {
-	if _, err := Unmarshal([]byte("{")); err == nil {
-		t.Fatal("expected invalid json to fail")
+func TestUnmarshalRejectsInvalidFrame(t *testing.T) {
+	if _, err := Unmarshal([]byte("not-a-frame")); err == nil {
+		t.Fatal("expected invalid frame to fail")
+	}
+	if _, _, err := wire.DecodeFrame([]byte{wire.Magic, wire.MsgPing, 0, 0, 0, 10}); err == nil {
+		t.Fatal("expected truncated frame to fail")
 	}
 }

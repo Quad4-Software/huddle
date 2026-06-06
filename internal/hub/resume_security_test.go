@@ -1,8 +1,9 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
+
+	"huddle/internal/room"
 )
 
 func TestHubResumeRequiresToken(t *testing.T) {
@@ -47,15 +48,12 @@ func TestHubNonHostCannotAddChannel(t *testing.T) {
 	guest.send(TypeAddChannel, AddChannelPayload{ID: "malicious", Name: "malicious"})
 	state := host.readType(TypeRoomState)
 
-	var roomState struct {
-		Channels []struct {
-			ID string `json:"id"`
-		} `json:"channels"`
-	}
-	if err := json.Unmarshal(state.Payload, &roomState); err != nil {
+	roomState, err := decodeRoomStatePayload(state.Payload)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ch := range roomState.Channels {
+	channels, _ := roomState["channels"].([]room.Channel)
+	for _, ch := range channels {
 		if ch.ID == "malicious" {
 			t.Fatal("non-host must not add channels")
 		}

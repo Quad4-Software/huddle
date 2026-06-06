@@ -3,6 +3,8 @@ package hub
 import (
 	"testing"
 	"time"
+
+	"huddle/internal/room"
 )
 
 func TestHubRefreshReplacesSameIPConnection(t *testing.T) {
@@ -78,21 +80,15 @@ func TestHubJoinDoesNotDuplicateMembersForHostAndGuest(t *testing.T) {
 		t.Fatalf("expected 2 members, got %d", r.Size())
 	}
 
-	members, ok := guestJoined.Room["members"].([]any)
+	members, ok := guestJoined.Room["members"].([]room.Member)
 	if !ok || len(members) != 2 {
 		t.Fatalf("expected 2 members in joined snapshot, got %+v", guestJoined.Room["members"])
 	}
 
 	ids := map[string]bool{guestJoined.PeerID: true}
-	for _, raw := range members {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("unexpected member shape: %+v", raw)
-		}
-		name, _ := m["name"].(string)
-		id, _ := m["id"].(string)
-		if name == "Dave" {
-			ids[id] = true
+	for _, m := range members {
+		if m.Name == "Dave" {
+			ids[m.ID] = true
 		}
 	}
 	if len(ids) != 2 {

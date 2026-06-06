@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { buildInviteUrl, parseInviteLocation } from './invite';
+import { buildFullInviteUrl, buildInviteUrl, parseInviteLocation } from './invite';
 
 describe('invite urls', () => {
   it('builds encoded invite links with fragment key', () => {
     const url = buildInviteUrl('room123', 'invite.token', 'room-key');
     expect(url).toBe('/r/room123?t=invite.token#key=room-key');
+  });
+
+  it('builds full invite links with origin', () => {
+    const url = buildFullInviteUrl('https://huddle.example', 'room123', 'invite.token', 'room-key');
+    expect(url).toBe('https://huddle.example/r/room123?t=invite.token#key=room-key');
   });
 
   it('parses invite links from location parts', () => {

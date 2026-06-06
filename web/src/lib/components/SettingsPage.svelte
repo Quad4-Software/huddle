@@ -1,10 +1,10 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import DisplayNameInput from './DisplayNameInput.svelte';
   import { mdiArrowLeft } from '../icons';
   import { settings } from '../stores/settings.svelte';
   import { listAudioDevices } from '../webrtc/audio';
   import { refreshMic, changeName } from '../session-controller';
-  import { MAX_DISPLAY_NAME_LENGTH } from '../validation';
 
   let { onBack }: { onBack: () => void } = $props();
 
@@ -34,10 +34,6 @@
   function onOutputChange(e: Event) {
     settings.setOutput((e.target as HTMLSelectElement).value);
   }
-
-  function onNameChange(e: Event) {
-    changeName((e.target as HTMLInputElement).value.slice(0, MAX_DISPLAY_NAME_LENGTH));
-  }
 </script>
 
 <div class="mx-auto max-w-lg p-6">
@@ -54,13 +50,11 @@
   <div class="space-y-5">
     <label class="block">
       <span class="mb-1.5 block text-xs font-medium text-muted">Display name</span>
-      <input
-        type="text"
-        value={settings.displayName}
-        maxlength={MAX_DISPLAY_NAME_LENGTH}
-        oninput={onNameChange}
+      <DisplayNameInput
+        bind:value={settings.displayName}
         placeholder="Your name"
-        class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+        live
+        onLiveChange={changeName}
       />
       <p class="mt-1.5 text-xs text-muted">Changes update live for everyone in the room.</p>
     </label>

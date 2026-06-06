@@ -31,24 +31,34 @@ function hasLeadingZeroBits(hash: Uint8Array, bits: number): boolean {
   return (hash[fullBytes] & mask) === 0;
 }
 
-export async function solveChallenge(prefix: string, difficulty: number): Promise<number> {
+export async function solveChallenge(
+  prefix: string,
+  difficulty: number,
+  onProgress?: (progress: number) => void,
+): Promise<number> {
+  const expected = Math.max(1, 2 ** difficulty);
   let nonce = 0;
   while (true) {
     const data = new TextEncoder().encode(`${prefix}:${nonce}`);
     const digest = await crypto.subtle.digest('SHA-256', data);
     if (hasLeadingZeroBits(new Uint8Array(digest), difficulty)) {
+      onProgress?.(100);
       return nonce;
     }
     nonce++;
     if (nonce % 4096 === 0) {
+      onProgress?.(Math.min(95, (nonce / expected) * 100));
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
 }
 
-export async function solvePow(action: 'create' | 'join'): Promise<PowSolution | undefined> {
+export async function solvePow(
+  action: 'create' | 'join',
+  onProgress?: (progress: number) => void,
+): Promise<PowSolution | undefined> {
   const challenge = await fetchChallenge(action);
   if (!challenge) return undefined;
-  const nonce = await solveChallenge(challenge.prefix, challenge.difficulty);
+  const nonce = await solveChallenge(challenge.prefix, challenge.difficulty, onProgress);
   return { id: challenge.id, nonce };
 }

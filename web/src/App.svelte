@@ -2,13 +2,25 @@
   import Landing from './lib/components/Landing.svelte';
   import RoomView from './lib/components/RoomView.svelte';
   import SettingsPage from './lib/components/SettingsPage.svelte';
+  import LoadingScreen from './lib/components/LoadingScreen.svelte';
   import { session } from './lib/stores/session.svelte';
+  import { loading } from './lib/stores/loading.svelte';
   import { joinFromUrl } from './lib/session-controller';
   import { SITE_NAME, canonicalUrl, pageDescription, pageTitle, robotsDirective } from './lib/seo';
   import type { View } from './lib/types';
 
+  function hasInviteUrl(): boolean {
+    const roomId = location.pathname.match(/^\/r\/([^/]+)/)?.[1];
+    const invite = new URLSearchParams(location.search).get('t');
+    const key = location.hash.match(/key=([^&]+)/)?.[1];
+    return !!(roomId && invite && key);
+  }
+
+  const inviteBoot = hasInviteUrl();
+  if (inviteBoot) loading.start('joining');
+
   let view = $state<View>('landing');
-  let booting = $state(true);
+  let booting = $state(inviteBoot);
 
   const seoView = $derived(
     view === 'settings' ? 'settings' : view === 'room' && session.connected ? 'room' : 'landing',
@@ -20,12 +32,15 @@
   const seoCanonical = $derived(canonicalUrl(location.pathname, location.search));
 
   $effect(() => {
-    (async () => {
-      const joined = await joinFromUrl().catch(() => false);
-      if (joined) {
-        view = 'room';
+    void (async () => {
+      try {
+        const joined = await joinFromUrl().catch(() => false);
+        if (joined) {
+          view = 'room';
+        }
+      } finally {
+        booting = false;
       }
-      booting = false;
     })();
   });
 
@@ -60,8 +75,8 @@
   <meta name="twitter:description" content={seoDescription} />
 </svelte:head>
 
-{#if booting}
-  <div class="flex h-full items-center justify-center text-sm text-muted">Loading...</div>
+{#if booting || loading.active}
+  <LoadingScreen />
 {:else if view === 'settings'}
   <SettingsPage onBack={backFromSettings} />
 {:else if view === 'room' && session.connected}

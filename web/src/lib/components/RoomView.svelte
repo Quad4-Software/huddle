@@ -1,17 +1,30 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { mdiAccountPlusOutline, mdiAccountGroup, mdiChevronLeft } from '../icons';
+  import { mdiAccountPlusOutline, mdiAccountGroup, mdiChevronLeft, mdiCheck } from '../icons';
+  import { buildFullInviteUrl } from '../invite';
   import { session } from '../stores/session.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import MemberPanel from './MemberPanel.svelte';
   import VoiceBar from './VoiceBar.svelte';
   import ScreenGrid from './ScreenGrid.svelte';
-  import InviteModal from './InviteModal.svelte';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
-  let showInvite = $state(false);
+  let copied = $state(false);
   let sidebarMinimized = $state(false);
+
+  const inviteUrl = $derived(
+    session.room
+      ? buildFullInviteUrl(location.origin, session.room.id, session.invite, session.roomKey)
+      : '',
+  );
+
+  async function copyInvite() {
+    if (!inviteUrl) return;
+    await navigator.clipboard.writeText(inviteUrl);
+    copied = true;
+    setTimeout(() => (copied = false), 2000);
+  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -27,11 +40,13 @@
     </div>
 
     <button
-      onclick={() => (showInvite = true)}
-      class="flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+      onclick={copyInvite}
+      class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors {copied
+        ? 'bg-success/20 text-success'
+        : 'bg-accent text-white hover:bg-accent-hover'}"
     >
-      <Icon path={mdiAccountPlusOutline} size={18} />
-      Invite
+      <Icon path={copied ? mdiCheck : mdiAccountPlusOutline} size={18} />
+      {copied ? 'Copied' : 'Invite'}
     </button>
   </header>
 
@@ -64,7 +79,3 @@
 
   <VoiceBar {onSettings} />
 </div>
-
-{#if showInvite}
-  <InviteModal onClose={() => (showInvite = false)} />
-{/if}

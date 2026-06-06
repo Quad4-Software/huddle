@@ -33,4 +33,8 @@ export {
   mdiChevronRight,
   mdiChevronDown,
   mdiChevronUp,
+  mdiDiceMultiple,
+  mdiShieldLock,
+  mdiLogin,
+  mdiAccessPointNetwork,
 } from '@mdi/js';

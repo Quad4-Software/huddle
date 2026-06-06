@@ -1,21 +1,17 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import DisplayNameInput from './DisplayNameInput.svelte';
   import { mdiAccountGroup } from '../icons';
   import { createRoom } from '../session-controller';
   import { session } from '../stores/session.svelte';
+  import { loading } from '../stores/loading.svelte';
   import { settings } from '../stores/settings.svelte';
-  import {
-    MAX_DISPLAY_NAME_LENGTH,
-    MAX_PASSWORD_LENGTH,
-    MAX_ROOM_NAME_LENGTH,
-  } from '../validation';
+  import { MAX_PASSWORD_LENGTH, MAX_ROOM_NAME_LENGTH } from '../validation';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
-  let displayName = $state(settings.displayName);
   let name = $state('');
   let password = $state('');
-  let loading = $state(false);
   let error = $state('');
 
   $effect(() => {
@@ -26,7 +22,7 @@
   });
 
   async function handleCreate() {
-    const nextDisplayName = displayName.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+    const nextDisplayName = settings.displayName.trim();
     const nextName = name.trim().slice(0, MAX_ROOM_NAME_LENGTH);
     const nextPassword = password.slice(0, MAX_PASSWORD_LENGTH);
 
@@ -38,14 +34,11 @@
       error = 'Enter a room name';
       return;
     }
-    loading = true;
     error = '';
-    settings.setName(nextDisplayName);
     try {
       await createRoom(nextName, nextPassword);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not create room';
-      loading = false;
     }
   }
 </script>
@@ -65,13 +58,7 @@
     <div class="rounded-xl border border-border bg-surface-1 p-6">
       <label class="mb-4 block">
         <span class="mb-1.5 block text-xs font-medium text-muted">Your name</span>
-        <input
-          type="text"
-          bind:value={displayName}
-          maxlength={MAX_DISPLAY_NAME_LENGTH}
-          placeholder="Alex"
-          class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
-        />
+        <DisplayNameInput bind:value={settings.displayName} placeholder="Alex" />
       </label>
 
       <label class="mb-4 block">
@@ -102,10 +89,10 @@
 
       <button
         onclick={handleCreate}
-        disabled={loading}
+        disabled={loading.active}
         class="w-full rounded-lg bg-accent py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
       >
-        {loading ? 'Creating' : 'Create room'}
+        Create room
       </button>
     </div>
 

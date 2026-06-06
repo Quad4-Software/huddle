@@ -5,7 +5,9 @@ import { getMicStream, createAnalyser, isSpeaking } from './webrtc/audio';
 import { getScreenStream } from './webrtc/screen';
 import { session } from './stores/session.svelte';
 import { settings } from './stores/settings.svelte';
+import { loading } from './stores/loading.svelte';
 import { buildInviteUrl } from './invite';
+import { randomDisplayName } from './random-name';
 import { solvePow } from './pow';
 import type { RoomState, ControlMessage } from './types';
 import {
@@ -57,6 +59,10 @@ function applyJoinedState(peerId: string, room: RoomState, resumeToken?: string)
 
 async function ensureSignaling() {
   if (!signaling) {
+    if (loading.active) {
+      loading.setPhase('connecting');
+      loading.advanceTo(5);
+    }
     signaling = new Signaling();
     await signaling.connect();
   }
@@ -278,44 +284,62 @@ async function reconnectSession(roomId: string, invite: string) {
 }
 
 export async function createRoom(name: string, password: string): Promise<void> {
-  await ensureSignaling();
-  const roomName = cleanBounded(name, MAX_ROOM_NAME_LENGTH);
-  const roomPassword = password.slice(0, MAX_PASSWORD_LENGTH);
+  loading.start('creating');
+  try {
+    await ensureSignaling();
+    const roomName = cleanBounded(name, MAX_ROOM_NAME_LENGTH);
+    const roomPassword = password.slice(0, MAX_PASSWORD_LENGTH);
 
-  return new Promise((resolve, reject) => {
-    signaling!.once('created', (payload) => {
-      const p = payload as {
-        roomId: string;
-        invite: string;
-        roomKey: string;
-        expiresAt: number;
+    return new Promise((resolve, reject) => {
+      const fail = (err: unknown) => {
+        loading.stop();
+        reject(err instanceof Error ? err : new Error(String(err)));
       };
-      session.invite = p.invite;
-      session.roomKey = p.roomKey;
-      const url = buildInviteUrl(p.roomId, p.invite, p.roomKey);
-      history.replaceState(null, '', url);
-      joinRoom(
-        p.roomId,
-        p.invite,
-        roomPassword,
-        cleanBounded(settings.displayName || 'Host', MAX_DISPLAY_NAME_LENGTH) || 'Host',
-      )
-        .then(resolve)
-        .catch(reject);
+
+      signaling!.once('created', (payload) => {
+        const p = payload as {
+          roomId: string;
+          invite: string;
+          roomKey: string;
+          expiresAt: number;
+        };
+        session.invite = p.invite;
+        session.roomKey = p.roomKey;
+        const url = buildInviteUrl(p.roomId, p.invite, p.roomKey);
+        history.replaceState(null, '', url);
+        joinRoom(
+          p.roomId,
+          p.invite,
+          roomPassword,
+          cleanBounded(settings.displayName || 'Host', MAX_DISPLAY_NAME_LENGTH) || 'Host',
+          { powStart: 45, powEnd: 85 },
+        )
+          .then(() => {
+            loading.stop();
+            resolve();
+          })
+          .catch(fail);
+      });
+      signaling!.once('error', (payload) => {
+        fail(new Error((payload as { message: string }).message));
+      });
+      loading.beginPow(5, 40);
+      solvePow('create', (progress) => loading.setPowProgress(progress))
+        .then((pow) => {
+          loading.advanceTo(40);
+          loading.setPhase('creating');
+          signaling!.send('create_room', {
+            name: roomName,
+            password: roomPassword || undefined,
+            pow,
+          });
+        })
+        .catch(fail);
     });
-    signaling!.once('error', (payload) => {
-      reject(new Error((payload as { message: string }).message));
-    });
-    solvePow('create')
-      .then((pow) => {
-        signaling!.send('create_room', {
-          name: roomName,
-          password: roomPassword || undefined,
-          pow,
-        });
-      })
-      .catch(reject);
-  });
+  } catch (err) {
+    loading.stop();
+    throw err;
+  }
 }
 
 export async function joinFromUrl(): Promise<boolean> {
@@ -325,15 +349,20 @@ export async function joinFromUrl(): Promise<boolean> {
   const key = location.hash.match(/key=([^&]+)/)?.[1];
   if (!roomId || !invite || !key) return false;
 
+  loading.start('joining');
   session.invite = invite;
   session.roomKey = key;
-  const name = settings.displayName || prompt('Display name') || 'Guest';
-  const cleanName = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH) || 'Guest';
+  let name = settings.displayName.trim();
+  if (!name) {
+    name = randomDisplayName();
+  }
+  const cleanName = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH) || randomDisplayName();
   settings.setName(cleanName);
 
   try {
     await joinRoom(roomId, invite, '', cleanName);
   } catch {
+    loading.stop();
     const password = (prompt('Enter room password if required') ?? '').slice(
       0,
       MAX_PASSWORD_LENGTH,
@@ -349,8 +378,12 @@ export async function joinRoom(
   invite: string,
   password: string,
   name: string,
+  options?: { powStart?: number; powEnd?: number },
 ): Promise<void> {
+  if (!loading.active) loading.start('joining');
   await ensureSignaling();
+  const powStart = options?.powStart ?? 5;
+  const powEnd = options?.powEnd ?? 85;
   const cleanName = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH);
   const cleanPassword = password.slice(0, MAX_PASSWORD_LENGTH);
 
@@ -366,6 +399,11 @@ export async function joinRoom(
   }
 
   return new Promise((resolve, reject) => {
+    const fail = (err: unknown) => {
+      loading.stop();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
     signaling!.once('joined', (payload) => {
       const p = payload as { peerId?: string; room?: RoomState; resumeToken?: string };
       if (p.peerId && p.room) {
@@ -374,13 +412,17 @@ export async function joinRoom(
       if (cleanPassword) {
         sessionStorage.setItem(peerPasswordKey(roomId), cleanPassword);
       }
+      loading.stop();
       resolve();
     });
     signaling!.once('error', (payload) => {
-      reject(new Error((payload as { message: string }).message));
+      fail(new Error((payload as { message: string }).message));
     });
-    solvePow('join')
+    loading.beginPow(powStart, powEnd);
+    solvePow('join', (progress) => loading.setPowProgress(progress))
       .then((pow) => {
+        loading.advanceTo(powEnd);
+        loading.setPhase('joining');
         signaling!.send('join', {
           roomId,
           invite,
@@ -391,7 +433,7 @@ export async function joinRoom(
           resumeToken,
         });
       })
-      .catch(reject);
+      .catch(fail);
   });
 }
 

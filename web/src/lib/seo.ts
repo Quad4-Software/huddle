@@ -38,7 +38,3 @@ export function canonicalUrl(pathname: string, search = ''): string {
   const query = search.startsWith('?') ? search : search ? `?${search}` : '';
   return `${location.origin}${path}${query}`;
 }
-
-export function openGraphType(view: SeoView): 'website' | 'website' {
-  return 'website';
-}

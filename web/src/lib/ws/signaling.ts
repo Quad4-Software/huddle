@@ -10,7 +10,20 @@ export class Signaling {
     this.url = url ?? `${proto}//${location.host}/ws`;
   }
 
+  isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  disconnect() {
+    this.ws?.close();
+    this.ws = null;
+  }
+
   connect(): Promise<void> {
+    if (this.isOpen()) {
+      return Promise.resolve();
+    }
+    this.disconnect();
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.url);
       this.ws.onopen = () => resolve();
@@ -60,8 +73,7 @@ export class Signaling {
   }
 
   close() {
-    this.ws?.close();
-    this.ws = null;
+    this.disconnect();
     this.handlers.clear();
   }
 }

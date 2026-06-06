@@ -7,9 +7,24 @@ function decodeBase64Url(raw: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
+function encodeBase64Url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
 export async function importRoomKey(raw: string): Promise<CryptoKey> {
   const bytes = decodeBase64Url(raw);
   return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+export async function importSigningKey(raw: string): Promise<CryptoKey> {
+  const bytes = decodeBase64Url(raw);
+  return crypto.subtle.importKey('raw', bytes, { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+    'verify',
+  ]);
 }
 
 export async function encrypt(key: CryptoKey, data: Uint8Array | string): Promise<string> {
@@ -33,4 +48,17 @@ export async function decrypt(key: CryptoKey, encoded: string): Promise<Uint8Arr
 export async function decryptText(key: CryptoKey, encoded: string): Promise<string> {
   const bytes = await decrypt(key, encoded);
   return decoder.decode(bytes);
+}
+
+export async function signText(key: CryptoKey, text: string): Promise<string> {
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(text));
+  return encodeBase64Url(new Uint8Array(sig));
+}
+
+export async function verifyText(
+  key: CryptoKey,
+  text: string,
+  signature: string,
+): Promise<boolean> {
+  return crypto.subtle.verify('HMAC', key, decodeBase64Url(signature), encoder.encode(text));
 }

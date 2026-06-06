@@ -1,7 +1,5 @@
-const ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
-
-export function createPeer(): RTCPeerConnection {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+export function createPeer(iceServers: RTCIceServer[] = []): RTCPeerConnection {
+  const pc = new RTCPeerConnection({ iceServers });
   preferOpus(pc);
   return pc;
 }

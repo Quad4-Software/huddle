@@ -4,6 +4,11 @@
   import { createRoom } from '../session-controller';
   import { session } from '../stores/session.svelte';
   import { settings } from '../stores/settings.svelte';
+  import {
+    MAX_DISPLAY_NAME_LENGTH,
+    MAX_PASSWORD_LENGTH,
+    MAX_ROOM_NAME_LENGTH,
+  } from '../validation';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
@@ -21,19 +26,23 @@
   });
 
   async function handleCreate() {
-    if (!displayName.trim()) {
+    const nextDisplayName = displayName.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+    const nextName = name.trim().slice(0, MAX_ROOM_NAME_LENGTH);
+    const nextPassword = password.slice(0, MAX_PASSWORD_LENGTH);
+
+    if (!nextDisplayName) {
       error = 'Enter your name';
       return;
     }
-    if (!name.trim()) {
+    if (!nextName) {
       error = 'Enter a room name';
       return;
     }
     loading = true;
     error = '';
-    settings.setName(displayName.trim());
+    settings.setName(nextDisplayName);
     try {
-      await createRoom(name.trim(), password);
+      await createRoom(nextName, nextPassword);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not create room';
       loading = false;
@@ -59,6 +68,7 @@
         <input
           type="text"
           bind:value={displayName}
+          maxlength={MAX_DISPLAY_NAME_LENGTH}
           placeholder="Alex"
           class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
         />
@@ -69,6 +79,7 @@
         <input
           type="text"
           bind:value={name}
+          maxlength={MAX_ROOM_NAME_LENGTH}
           placeholder="Team sync"
           class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
         />
@@ -79,6 +90,7 @@
         <input
           type="password"
           bind:value={password}
+          maxlength={MAX_PASSWORD_LENGTH}
           placeholder="Leave empty for invite only"
           class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
         />

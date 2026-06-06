@@ -4,6 +4,7 @@
   import { settings } from '../stores/settings.svelte';
   import { listAudioDevices } from '../webrtc/audio';
   import { refreshMic, changeName } from '../session-controller';
+  import { MAX_DISPLAY_NAME_LENGTH } from '../validation';
 
   let { onBack }: { onBack: () => void } = $props();
 
@@ -35,7 +36,7 @@
   }
 
   function onNameChange(e: Event) {
-    changeName((e.target as HTMLInputElement).value);
+    changeName((e.target as HTMLInputElement).value.slice(0, MAX_DISPLAY_NAME_LENGTH));
   }
 </script>
 
@@ -56,6 +57,7 @@
       <input
         type="text"
         value={settings.displayName}
+        maxlength={MAX_DISPLAY_NAME_LENGTH}
         oninput={onNameChange}
         placeholder="Your name"
         class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"

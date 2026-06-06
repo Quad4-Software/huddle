@@ -45,6 +45,9 @@ tasks:
 
   dev:backend:
     desc: Run Go server without rebuilding frontend
+    env:
+      HUDDLE_INVITE_SECRET: local-dev-only-not-for-production-use-32chars
+      HUDDLE_CORS_ORIGINS: http://localhost:5173
     cmds:
       - go run ./cmd/huddle -addr {{.ADDR}}
 

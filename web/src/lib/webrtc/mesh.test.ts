@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { importRoomKey } from '../crypto/e2e';
+import { importRoomKey, importSigningKey } from '../crypto/e2e';
 import type { AttachmentMeta } from '../types';
 import { Mesh } from './mesh';
 
@@ -8,9 +8,10 @@ const roomKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 describe('Mesh broadcastFile', () => {
   it('passes attachment meta to onAttachment for the sender', async () => {
     const key = await importRoomKey(roomKey);
+    const signingKey = await importSigningKey(roomKey);
     let attachedMeta: AttachmentMeta | null = null;
 
-    const mesh = new Mesh('peer-a', 'Alice', key, vi.fn(), {
+    const mesh = new Mesh('peer-a', 'Alice', key, signingKey, [], vi.fn(), {
       onMessage: vi.fn(),
       onAttachment: (meta, blob) => {
         attachedMeta = meta;

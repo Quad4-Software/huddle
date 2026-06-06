@@ -1,12 +1,12 @@
 import { createPeer } from './peer';
-import { encrypt, decrypt, decryptText } from '../crypto/e2e';
+import { encrypt, decrypt, decryptText, signText, verifyText } from '../crypto/e2e';
 import type { ChatMessage, AttachmentMeta, ControlMessage } from '../types';
 
 export type SignalSend = (
   type: 'offer' | 'answer' | 'ice',
   to: string,
-  data: { sdp?: string; candidate?: RTCIceCandidateInit },
-) => void;
+  data: { sdp?: string; candidate?: RTCIceCandidateInit; nonce: string; sig: string },
+) => void | Promise<void>;
 
 export type MeshEvents = {
   onMessage: (msg: ChatMessage) => void;
@@ -22,6 +22,30 @@ const CHUNK_SIZE = 16384;
 
 type PeerChannels = { chat?: RTCDataChannel; files?: RTCDataChannel; control?: RTCDataChannel };
 
+type SignalIntegrityPayload = {
+  type: 'offer' | 'answer' | 'ice';
+  from: string;
+  to: string;
+  nonce: string;
+  sdp?: string;
+  candidate?: RTCIceCandidateInit;
+};
+
+function canonicalSignal(payload: SignalIntegrityPayload): string {
+  return stableStringify(payload);
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+  return `{${entries.join(',')}}`;
+}
+
 export class Mesh {
   private peers = new Map<string, RTCPeerConnection>();
   private channels = new Map<string, PeerChannels>();
@@ -33,6 +57,9 @@ export class Mesh {
   private localId: string;
   private localName: string;
   private cryptoKey: CryptoKey;
+  private signingKey: CryptoKey;
+  private iceServers: RTCIceServer[];
+  private seenSignalNonces = new Map<string, Set<string>>();
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
   private signal: SignalSend;
@@ -42,12 +69,16 @@ export class Mesh {
     localId: string,
     localName: string,
     cryptoKey: CryptoKey,
+    signingKey: CryptoKey,
+    iceServers: RTCIceServer[],
     signal: SignalSend,
     events: MeshEvents,
   ) {
     this.localId = localId;
     this.localName = localName;
     this.cryptoKey = cryptoKey;
+    this.signingKey = signingKey;
+    this.iceServers = iceServers;
     this.signal = signal;
     this.events = events;
   }
@@ -68,21 +99,22 @@ export class Mesh {
 
   async connectTo(peerId: string) {
     if (this.peers.has(peerId)) return;
-    const pc = createPeer();
+    const pc = createPeer(this.iceServers);
     this.registerPeer(peerId, pc);
     this.bindLocalChannels(peerId, pc);
     if (this.localStream) this.attachLocalTracks(pc);
     if (this.screenStream) this.attachScreenTrack(pc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    this.signal('offer', peerId, { sdp: offer.sdp ?? undefined });
+    await this.sendSignal('offer', peerId, { sdp: offer.sdp ?? undefined });
   }
 
-  async handleOffer(from: string, sdp: string) {
+  async handleOffer(from: string, sdp: string, nonce: string, sig: string) {
+    if (!(await this.verifySignal('offer', from, { sdp }, nonce, sig))) return;
     let pc = this.peers.get(from);
     const isRenegotiation = !!pc?.currentRemoteDescription;
     if (!pc) {
-      pc = createPeer();
+      pc = createPeer(this.iceServers);
       this.registerPeer(from, pc);
       if (this.localStream) this.attachLocalTracks(pc);
       if (this.screenStream) this.attachScreenTrack(pc);
@@ -90,19 +122,21 @@ export class Mesh {
     await pc.setRemoteDescription({ type: 'offer', sdp });
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    this.signal('answer', from, { sdp: answer.sdp ?? undefined });
+    await this.sendSignal('answer', from, { sdp: answer.sdp ?? undefined });
     this.flushICE(from, pc);
     if (isRenegotiation) return;
   }
 
-  async handleAnswer(from: string, sdp: string) {
+  async handleAnswer(from: string, sdp: string, nonce: string, sig: string) {
+    if (!(await this.verifySignal('answer', from, { sdp }, nonce, sig))) return;
     const pc = this.peers.get(from);
     if (!pc) return;
     await pc.setRemoteDescription({ type: 'answer', sdp });
     this.flushICE(from, pc);
   }
 
-  async handleICE(from: string, candidate: RTCIceCandidateInit) {
+  async handleICE(from: string, candidate: RTCIceCandidateInit, nonce: string, sig: string) {
+    if (!(await this.verifySignal('ice', from, { candidate }, nonce, sig))) return;
     const pc = this.peers.get(from);
     if (!pc || !pc.remoteDescription) {
       const q = this.pendingICE.get(from) ?? [];
@@ -121,13 +155,53 @@ export class Mesh {
     }
   }
 
+  private async sendSignal(
+    type: 'offer' | 'answer' | 'ice',
+    to: string,
+    data: { sdp?: string; candidate?: RTCIceCandidateInit },
+  ) {
+    const nonce = crypto.randomUUID();
+    const sig = await signText(
+      this.signingKey,
+      canonicalSignal({ type, from: this.localId, to, nonce, ...data }),
+    );
+    await this.signal(type, to, { ...data, nonce, sig });
+  }
+
+  private async verifySignal(
+    type: 'offer' | 'answer' | 'ice',
+    from: string,
+    data: { sdp?: string; candidate?: RTCIceCandidateInit },
+    nonce: string,
+    sig: string,
+  ) {
+    if (!nonce || !sig || this.signalNonceSeen(from, nonce)) return false;
+    const ok = await verifyText(
+      this.signingKey,
+      canonicalSignal({ type, from, to: this.localId, nonce, ...data }),
+      sig,
+    );
+    if (ok) this.rememberSignalNonce(from, nonce);
+    return ok;
+  }
+
+  private signalNonceSeen(peerId: string, nonce: string) {
+    return this.seenSignalNonces.get(peerId)?.has(nonce) ?? false;
+  }
+
+  private rememberSignalNonce(peerId: string, nonce: string) {
+    const seen = this.seenSignalNonces.get(peerId) ?? new Set<string>();
+    seen.add(nonce);
+    this.seenSignalNonces.set(peerId, seen);
+  }
+
   private registerPeer(peerId: string, pc: RTCPeerConnection) {
     this.peers.set(peerId, pc);
     this.channels.set(peerId, {});
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
-        this.signal('ice', peerId, { candidate: ev.candidate.toJSON() });
+        void this.sendSignal('ice', peerId, { candidate: ev.candidate.toJSON() });
       }
     };
 
@@ -407,7 +481,7 @@ export class Mesh {
       this.attachScreenTrack(pc);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      this.signal('offer', peerId, { sdp: offer.sdp ?? undefined });
+      await this.sendSignal('offer', peerId, { sdp: offer.sdp ?? undefined });
     }
     stream.getVideoTracks()[0]?.addEventListener('ended', () => this.stopScreenShare());
   }
@@ -448,6 +522,7 @@ export class Mesh {
     for (const [, pc] of this.peers) pc.close();
     this.peers.clear();
     this.channels.clear();
+    this.seenSignalNonces.clear();
     this.chatQueue = [];
     this.fileQueue = [];
     this.controlQueue = [];

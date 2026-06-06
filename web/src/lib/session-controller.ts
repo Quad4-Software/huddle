@@ -1,6 +1,6 @@
 import { Signaling } from './ws/signaling';
 import { Mesh } from './webrtc/mesh';
-import { importRoomKey } from './crypto/e2e';
+import { importRoomKey, importSigningKey } from './crypto/e2e';
 import { getMicStream, createAnalyser, isSpeaking } from './webrtc/audio';
 import { getScreenStream } from './webrtc/screen';
 import { session } from './stores/session.svelte';
@@ -8,6 +8,14 @@ import { settings } from './stores/settings.svelte';
 import { buildInviteUrl } from './invite';
 import { solvePow } from './pow';
 import type { RoomState, ControlMessage } from './types';
+import {
+  cleanBounded,
+  MAX_CHAT_MESSAGE_LENGTH,
+  MAX_DISPLAY_NAME_LENGTH,
+  MAX_FILE_SIZE,
+  MAX_PASSWORD_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
+} from './validation';
 
 export { buildInviteUrl };
 
@@ -20,6 +28,32 @@ let speakTimer: ReturnType<typeof setInterval> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let lastSpeaking = false;
 let signalingWired = false;
+let meshPeerId: string | null = null;
+let intentionalLeave = false;
+let reconnecting = false;
+
+function peerResumeKey(roomId: string) {
+  return `huddle:peer:${roomId}`;
+}
+
+function peerResumeTokenKey(roomId: string) {
+  return `huddle:resume:${roomId}`;
+}
+
+function peerPasswordKey(roomId: string) {
+  return `huddle:pw:${roomId}`;
+}
+
+function applyJoinedState(peerId: string, room: RoomState, resumeToken?: string) {
+  session.peerId = peerId;
+  session.setRoom(room);
+  session.connected = true;
+  session.error = '';
+  sessionStorage.setItem(peerResumeKey(room.id), peerId);
+  if (resumeToken) {
+    sessionStorage.setItem(peerResumeTokenKey(room.id), resumeToken);
+  }
+}
 
 async function ensureSignaling() {
   if (!signaling) {
@@ -44,31 +78,43 @@ function wireSignaling() {
   if (!signaling) return;
 
   signaling.on('joined', async (payload) => {
-    const p = payload as { peerId?: string; room?: RoomState; peers?: string[] | null };
+    const p = payload as {
+      peerId?: string;
+      resumeToken?: string;
+      room?: RoomState;
+      peers?: string[] | null;
+      iceServers?: RTCIceServer[];
+    };
     if (!p?.peerId || !p?.room) return;
 
+    applyJoinedState(p.peerId, p.room, p.resumeToken);
     const peers = Array.isArray(p.peers) ? p.peers : [];
 
-    if (session.peerId === p.peerId && mesh) {
-      session.setRoom(p.room);
-      session.connected = true;
+    if (meshPeerId === p.peerId && mesh) {
       return;
     }
 
-    const cryptoKey = await importRoomKey(
-      session.roomKey || location.hash.match(/key=([^&]+)/)?.[1] || '',
-    );
+    let cryptoKey: CryptoKey;
+    let signingKey: CryptoKey;
+    try {
+      const roomKey = session.roomKey || location.hash.match(/key=([^&]+)/)?.[1] || '';
+      cryptoKey = await importRoomKey(roomKey);
+      signingKey = await importSigningKey(roomKey);
+    } catch {
+      session.error = 'Could not unlock room encryption';
+      return;
+    }
 
     mesh?.destroy();
-    session.peerId = p.peerId;
-    session.setRoom(p.room);
-    session.connected = true;
+    meshPeerId = p.peerId;
     session.setPeerOnline(p.peerId, true);
 
     mesh = new Mesh(
       p.peerId,
-      settings.displayName || 'Guest',
+      cleanBounded(settings.displayName || 'Guest', MAX_DISPLAY_NAME_LENGTH) || 'Guest',
       cryptoKey,
+      signingKey,
+      p.iceServers ?? [],
       (type, to, data) => {
         signaling?.send(type, { to, ...data });
       },
@@ -141,18 +187,23 @@ function wireSignaling() {
   });
 
   signaling.on('offer', async (payload) => {
-    const p = payload as { from: string; sdp: string };
-    await mesh?.handleOffer(p.from, p.sdp);
+    const p = payload as { from: string; sdp: string; nonce: string; sig: string };
+    await mesh?.handleOffer(p.from, p.sdp, p.nonce, p.sig);
   });
 
   signaling.on('answer', async (payload) => {
-    const p = payload as { from: string; sdp: string };
-    await mesh?.handleAnswer(p.from, p.sdp);
+    const p = payload as { from: string; sdp: string; nonce: string; sig: string };
+    await mesh?.handleAnswer(p.from, p.sdp, p.nonce, p.sig);
   });
 
   signaling.on('ice', async (payload) => {
-    const p = payload as { from: string; candidate: RTCIceCandidateInit };
-    await mesh?.handleICE(p.from, p.candidate);
+    const p = payload as {
+      from: string;
+      candidate: RTCIceCandidateInit;
+      nonce: string;
+      sig: string;
+    };
+    await mesh?.handleICE(p.from, p.candidate, p.nonce, p.sig);
   });
 
   signaling.on('room_state', (payload) => {
@@ -179,14 +230,57 @@ function wireSignaling() {
   });
 
   signaling.on('close', () => {
-    session.connected = false;
     session.meshReady = false;
     session.ping = null;
+    if (intentionalLeave || reconnecting) {
+      if (intentionalLeave) {
+        session.connected = false;
+      }
+      return;
+    }
+    const roomId = location.pathname.match(/^\/r\/([^/]+)/)?.[1];
+    const invite = new URLSearchParams(location.search).get('t');
+    const key = location.hash.match(/key=([^&]+)/)?.[1];
+    if (!roomId || !invite || !key || !session.room) {
+      session.connected = false;
+      return;
+    }
+    session.invite = invite;
+    session.roomKey = key;
+    void reconnectSession(roomId, invite);
   });
+}
+
+async function reconnectSession(roomId: string, invite: string) {
+  if (reconnecting) return;
+  reconnecting = true;
+  const password = (sessionStorage.getItem(peerPasswordKey(roomId)) ?? '').slice(
+    0,
+    MAX_PASSWORD_LENGTH,
+  );
+  const name =
+    settings.displayName ||
+    session.room?.members.find((m) => m.id === session.peerId)?.name ||
+    'Guest';
+  try {
+    mesh?.destroy();
+    mesh = null;
+    meshPeerId = null;
+    signaling = null;
+    signalingWired = false;
+    await ensureSignaling();
+    await joinRoom(roomId, invite, password, name);
+  } catch {
+    session.connected = false;
+  } finally {
+    reconnecting = false;
+  }
 }
 
 export async function createRoom(name: string, password: string): Promise<void> {
   await ensureSignaling();
+  const roomName = cleanBounded(name, MAX_ROOM_NAME_LENGTH);
+  const roomPassword = password.slice(0, MAX_PASSWORD_LENGTH);
 
   return new Promise((resolve, reject) => {
     signaling!.once('created', (payload) => {
@@ -200,7 +294,12 @@ export async function createRoom(name: string, password: string): Promise<void> 
       session.roomKey = p.roomKey;
       const url = buildInviteUrl(p.roomId, p.invite, p.roomKey);
       history.replaceState(null, '', url);
-      joinRoom(p.roomId, p.invite, password, settings.displayName || 'Host')
+      joinRoom(
+        p.roomId,
+        p.invite,
+        roomPassword,
+        cleanBounded(settings.displayName || 'Host', MAX_DISPLAY_NAME_LENGTH) || 'Host',
+      )
         .then(resolve)
         .catch(reject);
     });
@@ -209,7 +308,11 @@ export async function createRoom(name: string, password: string): Promise<void> 
     });
     solvePow('create')
       .then((pow) => {
-        signaling!.send('create_room', { name, password: password || undefined, pow });
+        signaling!.send('create_room', {
+          name: roomName,
+          password: roomPassword || undefined,
+          pow,
+        });
       })
       .catch(reject);
   });
@@ -225,19 +328,18 @@ export async function joinFromUrl(): Promise<boolean> {
   session.invite = invite;
   session.roomKey = key;
   const name = settings.displayName || prompt('Display name') || 'Guest';
-  settings.setName(name);
+  const cleanName = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH) || 'Guest';
+  settings.setName(cleanName);
 
-  let password = params.get('pw') ?? '';
   try {
-    await joinRoom(roomId, invite, password, name);
-  } catch (e) {
-    if (e instanceof Error && e.message.includes('password')) {
-      password = prompt('Room password') ?? '';
-      if (!password) return false;
-      await joinRoom(roomId, invite, password, name);
-    } else {
-      throw e;
-    }
+    await joinRoom(roomId, invite, '', cleanName);
+  } catch {
+    const password = (prompt('Enter room password if required') ?? '').slice(
+      0,
+      MAX_PASSWORD_LENGTH,
+    );
+    if (!password) return false;
+    await joinRoom(roomId, invite, password, cleanName);
   }
   return true;
 }
@@ -249,15 +351,45 @@ export async function joinRoom(
   name: string,
 ): Promise<void> {
   await ensureSignaling();
+  const cleanName = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH);
+  const cleanPassword = password.slice(0, MAX_PASSWORD_LENGTH);
+
+  let resumePeerId = sessionStorage.getItem(peerResumeKey(roomId)) ?? undefined;
+  let resumeToken = sessionStorage.getItem(peerResumeTokenKey(roomId)) ?? undefined;
+  if (resumePeerId && !resumeToken) {
+    sessionStorage.removeItem(peerResumeKey(roomId));
+    resumePeerId = undefined;
+  }
+  if (!resumePeerId || !resumeToken) {
+    resumePeerId = undefined;
+    resumeToken = undefined;
+  }
 
   return new Promise((resolve, reject) => {
-    signaling!.once('joined', () => resolve());
+    signaling!.once('joined', (payload) => {
+      const p = payload as { peerId?: string; room?: RoomState; resumeToken?: string };
+      if (p.peerId && p.room) {
+        applyJoinedState(p.peerId, p.room, p.resumeToken);
+      }
+      if (cleanPassword) {
+        sessionStorage.setItem(peerPasswordKey(roomId), cleanPassword);
+      }
+      resolve();
+    });
     signaling!.once('error', (payload) => {
       reject(new Error((payload as { message: string }).message));
     });
     solvePow('join')
       .then((pow) => {
-        signaling!.send('join', { roomId, invite, password: password || undefined, name, pow });
+        signaling!.send('join', {
+          roomId,
+          invite,
+          password: cleanPassword || undefined,
+          name: cleanName,
+          pow,
+          resumePeerId,
+          resumeToken,
+        });
       })
       .catch(reject);
   });
@@ -330,11 +462,17 @@ export async function sendMessage(text: string) {
     session.error = 'Not connected yet';
     return;
   }
-  await mesh.broadcastMessage(session.activeChannel, text);
+  const clean = text.trim().slice(0, MAX_CHAT_MESSAGE_LENGTH);
+  if (!clean) return;
+  await mesh.broadcastMessage(session.activeChannel, clean);
 }
 
 export async function sendFile(file: File) {
   if (!mesh) return;
+  if (file.size > MAX_FILE_SIZE) {
+    session.error = 'File is too large';
+    return;
+  }
   await mesh.broadcastFile(session.activeChannel, file);
 }
 
@@ -345,7 +483,7 @@ export function toggleReaction(messageId: string, emoji: string) {
 }
 
 export function changeName(name: string) {
-  const clean = name.trim();
+  const clean = cleanBounded(name, MAX_DISPLAY_NAME_LENGTH);
   if (!clean) return;
   settings.setName(clean);
   mesh?.setLocalName(clean);
@@ -403,24 +541,37 @@ function cleanupSession() {
   mesh?.destroy();
   signaling?.close();
   mesh = null;
+  meshPeerId = null;
   signaling = null;
   signalingWired = false;
   micStream = null;
   lastSpeaking = false;
 }
 
+function clearPeerResume(roomId?: string) {
+  if (roomId) {
+    sessionStorage.removeItem(peerResumeKey(roomId));
+  }
+}
+
 function forceLeaveSession(message: string) {
+  intentionalLeave = true;
+  clearPeerResume(session.room?.id);
   cleanupSession();
   session.reset();
   session.error = message;
   history.replaceState(null, '', '/');
+  intentionalLeave = false;
 }
 
 export function leaveSession() {
+  intentionalLeave = true;
+  clearPeerResume(session.room?.id);
   signaling?.send('leave');
   cleanupSession();
   session.reset();
   history.replaceState(null, '', '/');
+  intentionalLeave = false;
 }
 
 export async function refreshMic() {

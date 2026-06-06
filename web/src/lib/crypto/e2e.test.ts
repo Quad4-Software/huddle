@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { decrypt, decryptText, encrypt, importRoomKey } from './e2e';
+import {
+  decrypt,
+  decryptText,
+  encrypt,
+  importRoomKey,
+  importSigningKey,
+  signText,
+  verifyText,
+} from './e2e';
 
 const roomKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -37,5 +45,12 @@ describe('e2e crypto', () => {
     const other = await importRoomKey('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
     const encoded = await encrypt(key, 'locked');
     await expect(decryptText(other, encoded)).rejects.toThrow();
+  });
+
+  it('signs and verifies signaling text', async () => {
+    const key = await importSigningKey(roomKey);
+    const sig = await signText(key, '{"from":"a","to":"b"}');
+    await expect(verifyText(key, '{"from":"a","to":"b"}', sig)).resolves.toBe(true);
+    await expect(verifyText(key, '{"from":"a","to":"c"}', sig)).resolves.toBe(false);
   });
 });

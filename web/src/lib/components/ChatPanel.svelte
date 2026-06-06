@@ -6,6 +6,7 @@
   import { mdiSend, mdiPaperclip, mdiEmoticonOutline } from '../icons';
   import { session } from '../stores/session.svelte';
   import { sendMessage, sendFile, toggleReaction } from '../session-controller';
+  import { MAX_CHAT_MESSAGE_LENGTH, MAX_FILE_SIZE } from '../validation';
 
   let text = $state('');
   let fileInput: HTMLInputElement;
@@ -21,7 +22,7 @@
   });
 
   async function submit() {
-    const value = text.trim();
+    const value = text.slice(0, MAX_CHAT_MESSAGE_LENGTH).trim();
     if (!value) return;
     text = '';
     session.error = '';
@@ -38,6 +39,11 @@
   async function onFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
+    if (file && file.size > MAX_FILE_SIZE) {
+      session.error = 'File is too large';
+      input.value = '';
+      return;
+    }
     if (file) await sendFile(file);
     input.value = '';
   }
@@ -161,6 +167,7 @@
         <input
           type="text"
           bind:value={text}
+          maxlength={MAX_CHAT_MESSAGE_LENGTH}
           onkeydown={onKey}
           placeholder="Send a message"
           class="w-full rounded-lg border border-border bg-surface-2 py-2 pl-3 pr-[4.25rem] text-sm outline-none focus:border-accent"

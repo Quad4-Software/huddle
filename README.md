@@ -47,15 +47,23 @@ Backend on `:8080`, frontend on `:5173` (proxied to the API).
 |----------|-------------|
 | `HUDDLE_INVITE_SECRET` | Secret for signing invite tokens. Required in production. |
 | `HUDDLE_TRUST_PROXY` | Trust `X-Forwarded-*` headers when behind a reverse proxy. |
+| `HUDDLE_CORS_ORIGINS` | Comma-separated extra browser origins allowed for CORS and WebSocket upgrades. |
+| `HUDDLE_TURN_ENABLED` | Enable the built-in UDP TURN relay. |
+| `HUDDLE_TURN_PUBLIC_ADDR` | Public `ip:port` advertised for the built-in TURN relay. Required when TURN is enabled. |
 | `HUDDLE_PORT` | Host port for Docker Compose. |
+| `HUDDLE_TURN_PORT` | Host UDP port for Docker Compose TURN traffic. |
 
 Useful server flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-max-room-size` | `12` | Max peers per room |
+| `-max-rooms` | `1000` | Max active rooms |
+| `-invite-ttl` | `24h` | Invite token lifetime |
 | `-pow-difficulty` | `18` | Proof-of-work bits (`0` disables) |
 | `-rate-limit-create` | `10` | Room creates per IP per minute |
+| `-turn-listen-addr` | `:3478` | Built-in TURN UDP listen address |
+| `-turn-credential-ttl` | `4h` | Built-in TURN credential lifetime |
 
 Put TLS in front of the app in production. See `deploy/reverse-proxy.conf.example`.
 

@@ -40,7 +40,9 @@
   }
 </script>
 
-<div class="grid grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-surface-1 px-4 py-2">
+<div
+  class="grid grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-surface-1 px-4 py-2"
+>
   <div class="flex items-center gap-3 text-sm">
     <div class="flex items-center gap-2">
       <div

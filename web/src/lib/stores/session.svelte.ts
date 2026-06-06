@@ -177,10 +177,7 @@ class SessionStore {
       this.focusedShare = peerId;
       return;
     }
-    if (
-      !this.focusedShare ||
-      !this.allActiveShares.some((s) => s.peerId === this.focusedShare)
-    ) {
+    if (!this.focusedShare || !this.allActiveShares.some((s) => s.peerId === this.focusedShare)) {
       this.focusedShare = this.allActiveShares[0]?.peerId ?? null;
     }
   }

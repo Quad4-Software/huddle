@@ -89,12 +89,12 @@ type JoinedPayload struct {
 }
 
 type SignalPayload struct {
-	To        string `json:"to"`
-	From      string `json:"from,omitempty"`
-	SDP       string `json:"sdp,omitempty"`
-	Candidate any    `json:"candidate,omitempty"`
-	Nonce     string `json:"nonce,omitempty"`
-	Sig       string `json:"sig,omitempty"`
+	To        string          `json:"to"`
+	From      string          `json:"from,omitempty"`
+	SDP       string          `json:"sdp,omitempty"`
+	Candidate json.RawMessage `json:"candidate,omitempty"`
+	Nonce     string          `json:"nonce,omitempty"`
+	Sig       string          `json:"sig,omitempty"`
 }
 
 type MemberUpdatePayload struct {
@@ -125,16 +125,19 @@ type ErrorPayload struct {
 	Message string `json:"message"`
 }
 
+func marshalWithPayload(t MessageType, payload json.RawMessage) ([]byte, error) {
+	return json.Marshal(Message{Type: t, Payload: payload})
+}
+
 func Marshal(t MessageType, payload any) ([]byte, error) {
-	var raw json.RawMessage
-	if payload != nil {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-		raw = b
+	if payload == nil {
+		return json.Marshal(Message{Type: t})
 	}
-	return json.Marshal(Message{Type: t, Payload: raw})
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return marshalWithPayload(t, b)
 }
 
 func Unmarshal(data []byte) (Message, error) {

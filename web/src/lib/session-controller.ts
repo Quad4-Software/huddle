@@ -471,11 +471,7 @@ export async function joinFromUrl(): Promise<boolean> {
   }
 }
 
-async function joinFromUrlInner(
-  roomId: string,
-  invite: string,
-  key: string,
-): Promise<boolean> {
+async function joinFromUrlInner(roomId: string, invite: string, key: string): Promise<boolean> {
   loading.start('joining');
   session.invite = invite;
   session.roomKey = key;

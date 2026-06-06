@@ -119,6 +119,10 @@ func (c *Client) sendCriticalJSON(t MessageType, payload any) {
 	if err != nil {
 		return
 	}
+	c.sendCritical(data)
+}
+
+func (c *Client) sendCritical(data []byte) {
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
 	if c.closed {

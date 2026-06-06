@@ -54,7 +54,7 @@ func New(
 		powDifficulty: powDifficulty,
 		iceProvider:   provider,
 		clients:       make(map[string]map[string]*Client),
-		unregister:    make(chan *Client),
+		unregister:    make(chan *Client, 256),
 	}
 }
 
@@ -177,11 +177,14 @@ func (h *Hub) handleRename(c *Client, raw []byte) {
 }
 
 func (h *Hub) handlePing(c *Client, raw []byte) {
-	var p PingPayload
-	if err := decodePayload(raw, &p); err != nil {
+	if len(raw) == 0 || len(raw) > 64 {
 		return
 	}
-	c.SendJSON(TypePong, p)
+	data, err := marshalWithPayload(TypePong, raw)
+	if err != nil {
+		return
+	}
+	c.enqueue(data)
 }
 
 func (h *Hub) handleCreate(c *Client, raw []byte) {
@@ -318,13 +321,17 @@ func (h *Hub) handleSignal(c *Client, msg Message) {
 		return
 	}
 	p.From = c.ID
+	data, err := Marshal(msg.Type, p)
+	if err != nil {
+		return
+	}
 	h.mu.RLock()
 	target, ok := h.clients[c.RoomID][p.To]
 	h.mu.RUnlock()
 	if !ok {
 		return
 	}
-	target.sendCriticalJSON(msg.Type, p)
+	target.sendCritical(data)
 }
 
 func (h *Hub) handleMemberUpdate(c *Client, raw []byte) {
@@ -456,11 +463,10 @@ func validSignal(t MessageType, p SignalPayload) bool {
 	case TypeOffer, TypeAnswer:
 		return p.SDP != "" && len(p.SDP) <= MaxSDPLength
 	case TypeICE:
-		if p.Candidate == nil {
+		if len(p.Candidate) == 0 || !json.Valid(p.Candidate) {
 			return false
 		}
-		b, err := json.Marshal(p.Candidate)
-		return err == nil && len(b) <= MaxCandidateLength
+		return len(p.Candidate) <= MaxCandidateLength
 	default:
 		return false
 	}
@@ -479,13 +485,14 @@ func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string
 	if err != nil {
 		return
 	}
+	ptr, targets := borrowClientSlice(defaultClientSliceCap)
 	h.mu.RLock()
-	targets := make([]*Client, 0, len(h.clients[roomID]))
 	for id, c := range h.clients[roomID] {
 		if id != except {
 			targets = append(targets, c)
 		}
 	}
+	*ptr = targets
 	h.mu.RUnlock()
 	for _, c := range targets {
 		if !c.enqueue(data) {
@@ -493,6 +500,7 @@ func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string
 			h.unregister <- c
 		}
 	}
+	releaseClientSlice(ptr)
 }
 
 func (h *Hub) disconnectPeer(roomID, peerID string, keepRoom, notify bool) {
@@ -532,7 +540,7 @@ func (h *Hub) reconcileRoomMembers(roomID string) {
 func (h *Hub) peerIDs(roomID, except string) []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	ids := make([]string, 0)
+	ids := make([]string, 0, len(h.clients[roomID]))
 	for id := range h.clients[roomID] {
 		if id != except {
 			ids = append(ids, id)

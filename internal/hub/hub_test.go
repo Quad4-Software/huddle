@@ -235,6 +235,50 @@ func TestHubRelaysSignalBetweenPeers(t *testing.T) {
 	}
 }
 
+func TestHubRelaysICEWithRawCandidate(t *testing.T) {
+	url, _ := startTestHub(t, 4)
+	host := dialClient(t, url)
+	guest := dialClient(t, url)
+
+	host.send(TypeCreateRoom, CreateRoomPayload{Name: "ICE"})
+	created := host.readCreated()
+
+	host.send(TypeJoin, JoinPayload{
+		RoomID: created.RoomID,
+		Invite: created.Invite,
+		Name:   "Host",
+	})
+	hostJoined := host.readJoined()
+
+	guest.send(TypeJoin, JoinPayload{
+		RoomID: created.RoomID,
+		Invite: created.Invite,
+		Name:   "Guest",
+	})
+	guestJoined := guest.readJoined()
+	_ = host.readType(TypePeerJoined)
+
+	candidate := json.RawMessage(`{"candidate":"candidate:1 1 udp 2122260223 192.168.0.2 54321 typ host","sdpMid":"0","sdpMLineIndex":0}`)
+	host.send(TypeICE, SignalPayload{
+		To:        guestJoined.PeerID,
+		Nonce:     "nonce",
+		Sig:       "sig",
+		Candidate: candidate,
+	})
+
+	msg := guest.readType(TypeICE)
+	var relayed SignalPayload
+	if err := json.Unmarshal(msg.Payload, &relayed); err != nil {
+		t.Fatal(err)
+	}
+	if relayed.From != hostJoined.PeerID {
+		t.Fatalf("unexpected sender: %s", relayed.From)
+	}
+	if string(relayed.Candidate) != string(candidate) {
+		t.Fatalf("candidate not relayed: %s", relayed.Candidate)
+	}
+}
+
 func TestHubPingPong(t *testing.T) {
 	url, _ := startTestHub(t, 4)
 	client := dialClient(t, url)

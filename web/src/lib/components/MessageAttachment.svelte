@@ -18,8 +18,7 @@
   const resolvedMime = $derived(resolveAttachmentMime(mime, name));
 
   $effect(() => {
-    const typedBlob =
-      blob.type === resolvedMime ? blob : new Blob([blob], { type: resolvedMime });
+    const typedBlob = blob.type === resolvedMime ? blob : new Blob([blob], { type: resolvedMime });
     const url = URL.createObjectURL(typedBlob);
     objectUrl = url;
     return () => URL.revokeObjectURL(url);

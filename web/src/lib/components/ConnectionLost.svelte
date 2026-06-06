@@ -4,6 +4,7 @@
   import { connection } from '../stores/connection.svelte';
   import { session } from '../stores/session.svelte';
   import { leaveSession, retryConnection } from '../session-controller';
+  import Quad4Credit from './Quad4Credit.svelte';
 
   const reconnecting = $derived(connection.status === 'reconnecting');
   const title = $derived(reconnecting ? 'Reconnecting' : 'Connection lost');
@@ -60,9 +61,12 @@
       </button>
     </div>
 
-    <div class="mx-auto mt-10 flex items-center justify-center gap-2 text-xs text-muted">
-      <Icon path={mdiAccountGroup} size={14} />
-      <span>Huddle</span>
+    <div class="mx-auto mt-10 flex flex-col items-center justify-center gap-2">
+      <div class="flex items-center justify-center gap-2 text-xs text-muted">
+        <Icon path={mdiAccountGroup} size={14} />
+        <span>Huddle</span>
+      </div>
+      <Quad4Credit />
     </div>
   </div>
 </div>

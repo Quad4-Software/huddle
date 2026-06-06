@@ -6,9 +6,9 @@
     mdiChevronLeft,
     mdiCheck,
     mdiRefresh,
-  mdiAccountMultiple,
-  mdiQrcode,
-} from '../icons';
+    mdiAccountMultiple,
+    mdiQrcode,
+  } from '../icons';
   import { buildFullInviteUrl } from '../invite';
   import { session } from '../stores/session.svelte';
   import { connection } from '../stores/connection.svelte';

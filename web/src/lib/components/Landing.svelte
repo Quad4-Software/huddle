@@ -8,6 +8,7 @@
   import { loading } from '../stores/loading.svelte';
   import { settings } from '../stores/settings.svelte';
   import { MAX_PASSWORD_LENGTH, MAX_ROOM_NAME_LENGTH } from '../validation';
+  import Quad4Credit from './Quad4Credit.svelte';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
@@ -116,5 +117,9 @@
       End to end encrypted, peer to peer, no accounts.
       <button onclick={onSettings} class="ml-1 text-highlight hover:underline">Settings</button>
     </p>
+
+    <div class="mt-4 flex justify-center">
+      <Quad4Credit />
+    </div>
   </div>
 </div>

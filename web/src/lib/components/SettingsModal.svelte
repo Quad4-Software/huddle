@@ -13,6 +13,7 @@
   import { settingsMicSampler } from '../webrtc/settings-mic-level';
   import { applyAudioSettings, changeName, refreshMic } from '../session-controller';
   import { APP_NAME, APP_VERSION } from '../version';
+  import Quad4Credit from './Quad4Credit.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -371,6 +372,9 @@
             <p class="mt-2 text-xs leading-relaxed text-muted">
               E2EE and P2P voice, text, and screen sharing for small groups.
             </p>
+            <div class="mt-3 border-t border-border pt-3">
+              <Quad4Credit />
+            </div>
           </div>
         </section>
       {/if}

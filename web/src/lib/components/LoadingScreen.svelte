@@ -8,6 +8,7 @@
     mdiAccountGroup,
   } from '../icons';
   import { loading } from '../stores/loading.svelte';
+  import Quad4Credit from './Quad4Credit.svelte';
 
   const phaseConfig = {
     connecting: {
@@ -52,9 +53,12 @@
 
     <p class="mt-2 text-xs tabular-nums text-muted">{Math.round(loading.progress)}%</p>
 
-    <div class="mx-auto mt-10 flex items-center justify-center gap-2 text-xs text-muted">
-      <Icon path={mdiAccountGroup} size={14} />
-      <span>Huddle</span>
+    <div class="mx-auto mt-10 flex flex-col items-center justify-center gap-2">
+      <div class="flex items-center justify-center gap-2 text-xs text-muted">
+        <Icon path={mdiAccountGroup} size={14} />
+        <span>Huddle</span>
+      </div>
+      <Quad4Credit />
     </div>
   </div>
 </div>

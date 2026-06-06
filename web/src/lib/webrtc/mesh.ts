@@ -1,5 +1,6 @@
 import { createPeer } from './peer';
 import { encrypt, decrypt, decryptText, signText, verifyText } from '../crypto/e2e';
+import { resolveAttachmentMime } from '../attachments';
 import type { ChatMessage, AttachmentMeta, ControlMessage } from '../types';
 
 export type SignalSend = (
@@ -19,6 +20,18 @@ export type MeshEvents = {
 };
 
 const CHUNK_SIZE = 16384;
+
+async function channelDataToString(data: unknown): Promise<string> {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (ArrayBuffer.isView(data)) {
+    return new TextDecoder().decode(
+      data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+    );
+  }
+  if (data instanceof Blob) return data.text();
+  return String(data);
+}
 
 type PeerChannels = { chat?: RTCDataChannel; files?: RTCDataChannel; control?: RTCDataChannel };
 
@@ -279,7 +292,9 @@ export class Mesh {
 
     if (ch.label === 'files') {
       ch.onmessage = async (ev) => {
-        await this.handleFileMessage(ev.data as string);
+        try {
+          await this.handleFileMessage(await channelDataToString(ev.data));
+        } catch {}
       };
     }
 
@@ -362,10 +377,11 @@ export class Mesh {
   }
 
   async broadcastFile(channelId: string, file: File) {
+    const mime = resolveAttachmentMime(file.type, file.name);
     const meta: AttachmentMeta = {
       id: crypto.randomUUID(),
       name: file.name,
-      mime: file.type || 'application/octet-stream',
+      mime,
       size: file.size,
     };
     const msg: ChatMessage = {
@@ -434,8 +450,9 @@ export class Mesh {
         merged.set(c, offset);
         offset += c.length;
       }
-      const blob = new Blob([merged], { type: buf.meta.mime });
-      this.events.onAttachment(buf.meta, blob);
+      const mime = resolveAttachmentMime(buf.meta.mime, buf.meta.name);
+      const blob = new Blob([merged], { type: mime });
+      this.events.onAttachment({ ...buf.meta, mime }, blob);
       this.fileBuffers.delete(parsed.id);
     }
   }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isGifMime, isImageMime, isPreviewable, isVideoMime } from './attachments';
+import {
+  isGifMime,
+  isImageMime,
+  isPreviewable,
+  isVideoMime,
+  mimeFromFilename,
+  resolveAttachmentMime,
+} from './attachments';
 
 describe('attachments', () => {
   it('detects image and video mime types', () => {
@@ -16,9 +23,17 @@ describe('attachments', () => {
     expect(isGifMime('image/png', 'wave.png')).toBe(false);
   });
 
+  it('infers mime types from filename when type is missing', () => {
+    expect(mimeFromFilename('photo.webp')).toBe('image/webp');
+    expect(mimeFromFilename('clip.mp4')).toBe('video/mp4');
+    expect(resolveAttachmentMime('', 'photo.webp')).toBe('image/webp');
+    expect(resolveAttachmentMime('application/octet-stream', 'photo.webp')).toBe('image/webp');
+  });
+
   it('groups previewable media', () => {
     expect(isPreviewable('image/jpeg', 'photo.jpg')).toBe(true);
     expect(isPreviewable('video/webm', 'clip.webm')).toBe(true);
+    expect(isPreviewable('application/octet-stream', 'photo.webp')).toBe(true);
     expect(isPreviewable('application/pdf', 'doc.pdf')).toBe(false);
   });
 });

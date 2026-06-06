@@ -27,6 +27,14 @@ export async function importSigningKey(raw: string): Promise<CryptoKey> {
   ]);
 }
 
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 export async function encrypt(key: CryptoKey, data: Uint8Array | string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plain = typeof data === 'string' ? encoder.encode(data) : data;
@@ -34,7 +42,7 @@ export async function encrypt(key: CryptoKey, data: Uint8Array | string): Promis
   const out = new Uint8Array(iv.length + cipher.byteLength);
   out.set(iv);
   out.set(new Uint8Array(cipher), iv.length);
-  return btoa(String.fromCharCode(...out));
+  return encodeBase64(out);
 }
 
 export async function decrypt(key: CryptoKey, encoded: string): Promise<Uint8Array> {

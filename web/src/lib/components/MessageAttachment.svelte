@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import { mdiPaperclip } from '../icons';
-  import { isGifMime, isImageMime, isVideoMime } from '../attachments';
+  import { isImageMime, isVideoMime, resolveAttachmentMime } from '../attachments';
 
   let {
     blob,
@@ -15,14 +15,18 @@
 
   let objectUrl = $state('');
 
+  const resolvedMime = $derived(resolveAttachmentMime(mime, name));
+
   $effect(() => {
-    const url = URL.createObjectURL(blob);
+    const typedBlob =
+      blob.type === resolvedMime ? blob : new Blob([blob], { type: resolvedMime });
+    const url = URL.createObjectURL(typedBlob);
     objectUrl = url;
     return () => URL.revokeObjectURL(url);
   });
 
-  const showImage = $derived(isImageMime(mime) || isGifMime(mime, name));
-  const showVideo = $derived(isVideoMime(mime));
+  const showImage = $derived(isImageMime(resolvedMime));
+  const showVideo = $derived(isVideoMime(resolvedMime));
 </script>
 
 {#if showImage}

@@ -49,3 +49,7 @@ export function randomDisplayName(): string {
   const noun = nouns[Math.floor(Math.random() * nouns.length)];
   return `${adj} ${noun}`;
 }
+
+export function randomRoomName(): string {
+  return randomDisplayName();
+}

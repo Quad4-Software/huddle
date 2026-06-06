@@ -26,6 +26,14 @@ describe('Landing', () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
+  it('fills a random room name from the icon button', async () => {
+    render(Landing, { onSettings: () => {} });
+    const input = screen.getByPlaceholderText('Team sync') as HTMLInputElement;
+    expect(input.value).toBe('');
+    await fireEvent.click(screen.getByRole('button', { name: 'Random room name' }));
+    expect(input.value.length).toBeGreaterThan(0);
+  });
+
   it('submits trimmed room details', async () => {
     vi.mocked(createRoom).mockResolvedValueOnce();
     render(Landing, { onSettings: () => {} });

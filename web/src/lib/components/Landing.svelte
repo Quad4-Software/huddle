@@ -1,8 +1,9 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import DisplayNameInput from './DisplayNameInput.svelte';
-  import { mdiAccountGroup } from '../icons';
+  import { mdiAccountGroup, mdiDiceMultiple } from '../icons';
   import { createRoom } from '../session-controller';
+  import { randomRoomName } from '../random-name';
   import { session } from '../stores/session.svelte';
   import { loading } from '../stores/loading.svelte';
   import { settings } from '../stores/settings.svelte';
@@ -41,6 +42,10 @@
       error = e instanceof Error ? e.message : 'Could not create room';
     }
   }
+
+  function randomizeRoomName() {
+    name = randomRoomName();
+  }
 </script>
 
 <div class="flex min-h-full items-center justify-center p-6">
@@ -63,13 +68,24 @@
 
       <label class="mb-4 block">
         <span class="mb-1.5 block text-xs font-medium text-muted">Room name</span>
-        <input
-          type="text"
-          bind:value={name}
-          maxlength={MAX_ROOM_NAME_LENGTH}
-          placeholder="Team sync"
-          class="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
-        />
+        <div class="flex gap-2">
+          <input
+            type="text"
+            bind:value={name}
+            maxlength={MAX_ROOM_NAME_LENGTH}
+            placeholder="Team sync"
+            class="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            title="Random room name"
+            aria-label="Random room name"
+            onclick={randomizeRoomName}
+            class="shrink-0 rounded-lg border border-border bg-surface-2 px-2.5 text-muted transition-colors hover:border-accent hover:text-accent"
+          >
+            <Icon path={mdiDiceMultiple} size={18} />
+          </button>
+        </div>
       </label>
 
       <label class="mb-6 block">

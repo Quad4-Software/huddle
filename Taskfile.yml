@@ -1,0 +1,160 @@
+version: '3'
+
+vars:
+  BIN: bin/huddle
+  ADDR: ':8080'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install frontend dependencies
+    dir: web
+    cmds:
+      - pnpm install
+
+  web:
+    desc: Build frontend and sync into Go embed directory
+    deps: [install]
+    cmds:
+      - cd web && pnpm build
+      - rm -rf internal/server/dist/*
+      - cp -r web/dist/* internal/server/dist/
+      - touch internal/server/dist/.gitkeep
+
+  build:
+    desc: Build production binary
+    deps: [web]
+    cmds:
+      - go build -o {{.BIN}} ./cmd/huddle
+
+  run:
+    desc: Build and run server
+    deps: [build]
+    cmds:
+      - ./{{.BIN}} -addr {{.ADDR}}
+
+  dev:
+    desc: Run backend and Vite dev servers together
+    deps: [install]
+    cmds:
+      - task --parallel dev:backend dev:web
+
+  dev:backend:
+    desc: Run Go server without rebuilding frontend
+    cmds:
+      - go run ./cmd/huddle -addr {{.ADDR}}
+
+  dev:web:
+    desc: Run Vite dev server with API proxy
+    dir: web
+    cmds:
+      - pnpm dev
+
+  test:go:
+    desc: Run Go unit and integration tests
+    cmds:
+      - go test ./... -count=1
+
+  test:web:
+    desc: Run Vitest suite
+    dir: web
+    deps: [install]
+    cmds:
+      - pnpm test
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:go
+      - task: test:web
+
+  tidy:
+    desc: Tidy Go module
+    cmds:
+      - go mod tidy
+
+  fmt:go:
+    desc: Format Go sources
+    cmds:
+      - gofmt -w .
+      - go fmt ./...
+
+  fmt:web:
+    desc: Format frontend sources
+    dir: web
+    cmds:
+      - pnpm format
+
+  fmt:
+    desc: Format all sources
+    cmds:
+      - task: fmt:go
+      - task: fmt:web
+
+  lint:go:
+    desc: Vet and compile-check Go code
+    cmds:
+      - go vet ./...
+      - go build -o /dev/null ./...
+
+  lint:web:
+    desc: ESLint frontend sources
+    dir: web
+    cmds:
+      - pnpm lint
+
+  lint:web:fmt:
+    desc: Prettier check for frontend
+    dir: web
+    cmds:
+      - pnpm format:check
+
+  lint:
+    desc: Run all linters
+    deps: [install]
+    cmds:
+      - task: lint:go
+      - task: lint:web
+      - task: lint:web:fmt
+
+  check:
+    desc: Format, lint, test, and build
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+      - task: build
+
+  security:go:
+    desc: Run gosec static analysis
+    cmds:
+      - gosec ./...
+
+  security:fs:
+    desc: Run Trivy filesystem scan
+    cmds:
+      - trivy fs --scanners vuln,secret,misconfig .
+
+  security:web:
+    desc: Run pnpm audit on frontend dependencies
+    dir: web
+    deps: [install]
+    cmds:
+      - pnpm audit --prod
+
+  security:
+    desc: Run all security scans
+    cmds:
+      - task: security:go
+      - task: security:fs
+      - task: security:web
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin web/dist internal/server/dist/*
+      - touch internal/server/dist/.gitkeep

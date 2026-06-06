@@ -1,0 +1,28 @@
+packages:
+  - "."
+
+nodeLinker: hoisted
+verifyStoreIntegrity: true
+strictPeerDependencies: false
+
+minimumReleaseAge: 7d
+minimumReleaseAgeStrict: false
+blockExoticSubDeps: true
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  vitest: ">=4.1.0"
+  "@vitest/expect": ">=4.1.0"
+  "@vitest/mocker": ">=4.1.0"
+  "@vitest/pretty-format": ">=4.1.0"
+  "@vitest/runner": ">=4.1.0"
+  "@vitest/snapshot": ">=4.1.0"
+  "@vitest/spy": ">=4.1.0"
+  "@vitest/utils": ">=4.1.0"
+  flatted: ">=3.4.2"
+  minimatch: ">=10.2.1"
+  "@isaacs/brace-expansion": ">=5.0.1"
+  serialize-javascript: ">=7.0.3"
+  ansi-regex: ">=5.0.1"

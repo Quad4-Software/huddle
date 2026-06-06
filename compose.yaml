@@ -1,0 +1,36 @@
+services:
+  huddle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: huddle:latest
+    restart: unless-stopped
+    environment:
+      HUDDLE_INVITE_SECRET: ${HUDDLE_INVITE_SECRET:?set HUDDLE_INVITE_SECRET in .env}
+      HUDDLE_TRUST_PROXY: ${HUDDLE_TRUST_PROXY:-true}
+    ports:
+      - "${HUDDLE_PORT:-8080}:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    healthcheck:
+      test: ["CMD", "/usr/bin/huddle", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    cpus: 1.0
+    mem_limit: 512m
+    mem_reservation: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M

@@ -1,0 +1,6 @@
+.env
+bin/
+web/node_modules/
+web/dist/
+internal/server/dist/*
+!internal/server/dist/.gitkeep

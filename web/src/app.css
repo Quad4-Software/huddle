@@ -1,0 +1,97 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --color-surface-0: #0f1117;
+  --color-surface-1: #161b22;
+  --color-surface-2: #1c2129;
+  --color-surface-3: #252b36;
+  --color-border: #2d3544;
+  --color-text: #e8eaed;
+  --color-muted: #8b939f;
+  --color-accent: #7a9e8e;
+  --color-accent-hover: #668678;
+  --color-highlight: #c4ad8a;
+  --color-bubble-self: #24302b;
+  --color-bubble-self-border: #3d5248;
+  --color-success: #3ecf8e;
+  --color-danger: #e5534b;
+  --color-speaking: #3ecf8e;
+  --color-online: #3ecf8e;
+  --color-offline: #6b7280;
+  --color-away: #f5a524;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-surface-0);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 3px;
+}
+
+@keyframes speak-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-speaking) 50%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-speaking) 0%, transparent);
+  }
+}
+
+@keyframes voice-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.speak-ring {
+  animation: speak-pulse 1.4s ease-in-out infinite;
+}
+
+.voice-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.voice-bars span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--color-speaking);
+  transform-origin: bottom;
+  animation: voice-bar 0.8s ease-in-out infinite;
+}
+
+.voice-bars span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.voice-bars span:nth-child(3) {
+  animation-delay: 0.3s;
+}

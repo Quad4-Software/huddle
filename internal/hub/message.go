@@ -1,0 +1,125 @@
+package hub
+
+import "encoding/json"
+
+type MessageType string
+
+const (
+	TypeCreateRoom   MessageType = "create_room"
+	TypeJoin         MessageType = "join"
+	TypeLeave        MessageType = "leave"
+	TypeOffer        MessageType = "offer"
+	TypeAnswer       MessageType = "answer"
+	TypeICE          MessageType = "ice"
+	TypeRoomState    MessageType = "room_state"
+	TypeMemberUpdate MessageType = "member_update"
+	TypeAddChannel   MessageType = "add_channel"
+	TypeError        MessageType = "error"
+	TypeJoined       MessageType = "joined"
+	TypeCreated      MessageType = "created"
+	TypePeerJoined   MessageType = "peer_joined"
+	TypeRename       MessageType = "rename"
+	TypePing         MessageType = "ping"
+	TypePong         MessageType = "pong"
+	TypeKick         MessageType = "kick"
+	TypeKicked       MessageType = "kicked"
+	TypePeerLeft     MessageType = "peer_left"
+)
+
+type Message struct {
+	Type    MessageType     `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+type PowPayload struct {
+	ID    string `json:"id"`
+	Nonce uint64 `json:"nonce"`
+}
+
+type CreateRoomPayload struct {
+	Name     string      `json:"name"`
+	Password string      `json:"password,omitempty"`
+	Pow      *PowPayload `json:"pow,omitempty"`
+}
+
+type CreatedPayload struct {
+	RoomID    string `json:"roomId"`
+	Invite    string `json:"invite"`
+	RoomKey   string `json:"roomKey"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+type JoinPayload struct {
+	RoomID   string      `json:"roomId"`
+	Invite   string      `json:"invite"`
+	Password string      `json:"password,omitempty"`
+	Name     string      `json:"name"`
+	Pow      *PowPayload `json:"pow,omitempty"`
+}
+
+type KickPayload struct {
+	PeerID string `json:"peerId"`
+}
+
+type PeerLeftPayload struct {
+	PeerID string `json:"peerId"`
+}
+
+type JoinedPayload struct {
+	PeerID string         `json:"peerId"`
+	Room   map[string]any `json:"room"`
+	Peers  []string       `json:"peers"`
+}
+
+type SignalPayload struct {
+	To        string `json:"to"`
+	From      string `json:"from,omitempty"`
+	SDP       string `json:"sdp,omitempty"`
+	Candidate any    `json:"candidate,omitempty"`
+}
+
+type MemberUpdatePayload struct {
+	PeerID   string `json:"peerId"`
+	Muted    bool   `json:"muted"`
+	Deafened bool   `json:"deafened"`
+	Speaking bool   `json:"speaking"`
+}
+
+type AddChannelPayload struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type PeerJoinedPayload struct {
+	PeerID string `json:"peerId"`
+}
+
+type RenamePayload struct {
+	Name string `json:"name"`
+}
+
+type PingPayload struct {
+	T int64 `json:"t"`
+}
+
+type ErrorPayload struct {
+	Message string `json:"message"`
+}
+
+func Marshal(t MessageType, payload any) ([]byte, error) {
+	var raw json.RawMessage
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		raw = b
+	}
+	return json.Marshal(Message{Type: t, Payload: raw})
+}
+
+func Unmarshal(data []byte) (Message, error) {
+	var m Message
+	err := json.Unmarshal(data, &m)
+	return m, err
+}

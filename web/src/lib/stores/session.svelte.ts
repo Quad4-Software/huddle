@@ -19,6 +19,7 @@ class SessionStore {
   peerOnline = $state<Record<string, boolean>>({});
   localScreen = $state<MediaStream | null>(null);
   focusedShare = $state<string | null>(null);
+  screenPanelVisible = $state(true);
   muted = $state(false);
   deafened = $state(false);
   sharing = $state(false);
@@ -29,6 +30,13 @@ class SessionStore {
 
   sortedMembers = $derived(sortMembers(this.room?.members ?? []));
   isHost = $derived(!!this.room?.hostId && this.room.hostId === this.peerId);
+  allActiveShares = $derived.by(() => {
+    const shares = [...this.screenShares];
+    if (this.localScreen && this.sharing) {
+      shares.unshift({ peerId: this.peerId, stream: this.localScreen });
+    }
+    return shares;
+  });
 
   setRoom(r: RoomState) {
     this.room = { ...r, members: sortMembers(r.members) };
@@ -163,6 +171,24 @@ class SessionStore {
     this.pausedShares = { ...this.pausedShares, [shareId]: paused };
   }
 
+  showScreenPanel(peerId?: string) {
+    this.screenPanelVisible = true;
+    if (peerId) {
+      this.focusedShare = peerId;
+      return;
+    }
+    if (
+      !this.focusedShare ||
+      !this.allActiveShares.some((s) => s.peerId === this.focusedShare)
+    ) {
+      this.focusedShare = this.allActiveShares[0]?.peerId ?? null;
+    }
+  }
+
+  hideScreenPanel() {
+    this.screenPanelVisible = false;
+  }
+
   setWatchers(shareId: string, peerId: string, watching: boolean) {
     const current = this.watchers[shareId] ?? [];
     const next = watching
@@ -191,6 +217,7 @@ class SessionStore {
     this.peerOnline = {};
     this.localScreen = null;
     this.focusedShare = null;
+    this.screenPanelVisible = true;
     this.muted = false;
     this.deafened = false;
     this.sharing = false;

@@ -14,7 +14,7 @@ export async function fetchChallenge(action: 'create' | 'join'): Promise<PowChal
   const res = await fetch(`/api/pow/challenge?action=${action}`);
   if (res.status === 204) return null;
   if (!res.ok) {
-    throw new Error('Could not fetch proof-of-work challenge');
+    throw new Error(`Could not fetch proof-of-work challenge (${res.status})`);
   }
   return (await res.json()) as PowChallenge;
 }

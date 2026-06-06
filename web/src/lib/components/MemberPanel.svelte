@@ -1,7 +1,17 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import Avatar from './Avatar.svelte';
-  import { mdiMicrophoneOff, mdiHeadphonesOff, mdiAccountRemove, mdiCrown } from '../icons';
+  import {
+    mdiMicrophoneOff,
+    mdiHeadphonesOff,
+    mdiAccountRemove,
+    mdiCrown,
+    mdiChevronRight,
+    mdiChevronDown,
+    mdiChevronUp,
+    mdiMonitorShare,
+    mdiEyeOutline,
+  } from '../icons';
   import { session } from '../stores/session.svelte';
   import { memberStatus } from '../members';
   import { kickMember } from '../session-controller';
@@ -34,14 +44,74 @@
   function isRoomHost(peerId: string) {
     return session.room?.hostId === peerId;
   }
+
+  let { onMinimize }: { onMinimize?: () => void } = $props();
+
+  let shareMenuOpen = $state(false);
+
+  function viewShare(peerId: string) {
+    session.showScreenPanel(peerId);
+    shareMenuOpen = false;
+  }
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="border-b border-border px-4 py-3">
+  <div class="flex items-center justify-between border-b border-border px-4 py-3">
     <span class="text-xs font-semibold uppercase tracking-wide text-muted">
       Members {session.sortedMembers.length}
     </span>
+    {#if onMinimize}
+      <button
+        type="button"
+        onclick={onMinimize}
+        class="rounded p-1 text-muted transition-colors hover:bg-surface-3 hover:text-foreground"
+        title="Hide members"
+        aria-label="Hide members"
+      >
+        <Icon path={mdiChevronRight} size={18} />
+      </button>
+    {/if}
   </div>
+
+  {#if session.allActiveShares.length > 0}
+    <div class="border-b border-border">
+      <button
+        type="button"
+        onclick={() => (shareMenuOpen = !shareMenuOpen)}
+        class="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-surface-2"
+        aria-expanded={shareMenuOpen}
+      >
+        <Icon path={mdiMonitorShare} size={16} class="shrink-0 text-accent" />
+        <span class="min-w-0 flex-1 truncate text-xs">
+          {#if session.allActiveShares.length === 1}
+            {session.memberName(session.allActiveShares[0].peerId)} is sharing
+          {:else}
+            {session.allActiveShares.length} screens live
+          {/if}
+        </span>
+        <Icon
+          path={shareMenuOpen ? mdiChevronUp : mdiChevronDown}
+          size={16}
+          class="shrink-0 text-muted"
+        />
+      </button>
+      {#if shareMenuOpen}
+        <div class="space-y-0.5 border-t border-border px-2 py-1.5">
+          {#each session.allActiveShares as share (share.peerId)}
+            <button
+              type="button"
+              onclick={() => viewShare(share.peerId)}
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-2"
+            >
+              <Icon path={mdiEyeOutline} size={14} class="shrink-0 text-muted" />
+              <span class="truncate">View {session.memberName(share.peerId)}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   <div class="flex-1 overflow-y-auto p-2">
     {#each session.sortedMembers as member (member.id)}
       {@const online = isOnline(member.id)}

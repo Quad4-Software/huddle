@@ -29,4 +29,8 @@ export {
   mdiVolumeOff,
   mdiAccountRemove,
   mdiCrown,
+  mdiChevronLeft,
+  mdiChevronRight,
+  mdiChevronDown,
+  mdiChevronUp,
 } from '@mdi/js';

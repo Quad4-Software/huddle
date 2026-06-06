@@ -128,6 +128,12 @@ function wireSignaling() {
     const p = payload as { peerId: string };
     mesh?.removePeer(p.peerId);
     session.setPeerOnline(p.peerId, false);
+    if (session.room) {
+      session.setRoom({
+        ...session.room,
+        members: session.room.members.filter((m) => m.id !== p.peerId),
+      });
+    }
   });
 
   signaling.on('kicked', () => {

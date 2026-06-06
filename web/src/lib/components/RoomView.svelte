@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { mdiAccountPlusOutline, mdiAccountGroup } from '../icons';
+  import { mdiAccountPlusOutline, mdiAccountGroup, mdiChevronLeft } from '../icons';
   import { session } from '../stores/session.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import MemberPanel from './MemberPanel.svelte';
@@ -11,6 +11,7 @@
   let { onSettings }: { onSettings: () => void } = $props();
 
   let showInvite = $state(false);
+  let sidebarMinimized = $state(false);
 </script>
 
 <div class="flex h-full flex-col">
@@ -39,9 +40,26 @@
       <ScreenGrid />
       <ChatPanel />
     </main>
-    <aside class="hidden w-60 border-l border-border bg-surface-1 md:block">
-      <MemberPanel />
-    </aside>
+    {#if sidebarMinimized}
+      <aside class="hidden w-10 shrink-0 border-l border-border bg-surface-1 md:flex md:flex-col">
+        <button
+          type="button"
+          onclick={() => (sidebarMinimized = false)}
+          class="flex flex-1 flex-col items-center gap-2 py-3 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          title="Show members"
+          aria-label="Show members"
+        >
+          <Icon path={mdiChevronLeft} size={18} />
+          <span class="text-[10px] font-medium uppercase tracking-wide [writing-mode:vertical-rl]">
+            Members
+          </span>
+        </button>
+      </aside>
+    {:else}
+      <aside class="hidden w-60 shrink-0 border-l border-border bg-surface-1 md:block">
+        <MemberPanel onMinimize={() => (sidebarMinimized = true)} />
+      </aside>
+    {/if}
   </div>
 
   <VoiceBar {onSettings} />

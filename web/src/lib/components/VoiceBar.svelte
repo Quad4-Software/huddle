@@ -40,7 +40,7 @@
   }
 </script>
 
-<div class="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-2">
+<div class="grid grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-surface-1 px-4 py-2">
   <div class="flex items-center gap-3 text-sm">
     <div class="flex items-center gap-2">
       <div
@@ -64,10 +64,7 @@
     </div>
 
     {#if session.ping !== null}
-      <span class="flex items-center gap-1 text-xs text-muted">
-        <span class="h-1 w-1 rounded-full bg-current {pingColor(session.ping)}"></span>
-        <span class={pingColor(session.ping)}>{session.ping} ms</span>
-      </span>
+      <span class="text-xs {pingColor(session.ping)}">{session.ping} ms</span>
     {/if}
 
     {#if session.sharing}
@@ -75,7 +72,9 @@
     {/if}
   </div>
 
-  <div class="flex items-center gap-1">
+  <p class="text-center text-xs text-muted">Ephemeral and encrypted room</p>
+
+  <div class="flex items-center justify-end gap-1">
     <button
       onclick={toggleMute}
       class="rounded-lg p-2.5 transition-colors {session.muted

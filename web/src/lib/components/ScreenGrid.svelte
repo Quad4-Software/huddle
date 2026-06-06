@@ -37,13 +37,7 @@
     };
   }
 
-  const allShares = $derived.by(() => {
-    const shares = [...session.screenShares];
-    if (session.localScreen && session.sharing) {
-      shares.unshift({ peerId: session.peerId, stream: session.localScreen });
-    }
-    return shares;
-  });
+  const allShares = $derived(session.allActiveShares);
 
   const focused = $derived(
     allShares.find((s) => s.peerId === session.focusedShare) ?? allShares[0] ?? null,
@@ -103,17 +97,29 @@
   }
 </script>
 
+{#if session.screenPanelVisible}
 <section class="shrink-0 border-b border-border bg-surface-0">
   <div class="flex items-center justify-between px-4 py-2">
     <div class="flex items-center gap-2 text-sm font-medium">
       <Icon path={mdiMonitorShare} size={18} class="text-accent" />
       Screen
     </div>
-    {#if allShares.length > 0}
-      <span class="text-xs text-speaking">{allShares.length} live</span>
-    {:else}
-      <span class="text-xs text-muted">No active shares</span>
-    {/if}
+    <div class="flex items-center gap-2">
+      {#if allShares.length > 0}
+        <span class="text-xs text-speaking">{allShares.length} live</span>
+      {:else}
+        <span class="text-xs text-muted">No active shares</span>
+      {/if}
+      <button
+        type="button"
+        onclick={() => session.hideScreenPanel()}
+        class="rounded p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        title="Hide screen panel"
+        aria-label="Hide screen panel"
+      >
+        <Icon path={mdiClose} size={18} />
+      </button>
+    </div>
   </div>
 
   {#if allShares.length === 0}
@@ -268,6 +274,7 @@
     </div>
   {/if}
 </section>
+{/if}
 
 {#each Object.entries(session.remoteVoiceStreams) as [peerId, stream] (peerId)}
   {#if stream.getAudioTracks().length > 0}

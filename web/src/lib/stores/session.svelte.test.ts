@@ -61,6 +61,30 @@ describe('session store', () => {
     expect(session.reactions['m1']).toEqual([]);
   });
 
+  it('tracks all active shares including local screen', () => {
+    const video = {
+      getVideoTracks: () => [{ kind: 'video', readyState: 'live' }],
+      getAudioTracks: () => [],
+    } as MediaStream;
+
+    session.peerId = 'self';
+    session.sharing = true;
+    session.localScreen = video;
+    session.addRemoteStream('peer-b', video);
+
+    expect(session.allActiveShares).toHaveLength(2);
+    expect(session.allActiveShares[0]?.peerId).toBe('self');
+  });
+
+  it('hides and shows the screen panel for the session', () => {
+    expect(session.screenPanelVisible).toBe(true);
+    session.hideScreenPanel();
+    expect(session.screenPanelVisible).toBe(false);
+    session.showScreenPanel('peer-a');
+    expect(session.screenPanelVisible).toBe(true);
+    expect(session.focusedShare).toBe('peer-a');
+  });
+
   it('tracks watchers per share', () => {
     session.setWatchers('share-x', 'a', true);
     session.setWatchers('share-x', 'a', true);

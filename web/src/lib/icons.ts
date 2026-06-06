@@ -44,4 +44,5 @@ export {
   mdiMessageTextOutline,
   mdiGestureTapHold,
   mdiAccountMultiple,
+  mdiQrcode,
 } from '@mdi/js';

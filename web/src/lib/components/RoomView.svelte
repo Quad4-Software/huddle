@@ -6,8 +6,9 @@
     mdiChevronLeft,
     mdiCheck,
     mdiRefresh,
-    mdiAccountMultiple,
-  } from '../icons';
+  mdiAccountMultiple,
+  mdiQrcode,
+} from '../icons';
   import { buildFullInviteUrl } from '../invite';
   import { session } from '../stores/session.svelte';
   import { connection } from '../stores/connection.svelte';
@@ -18,12 +19,14 @@
   import VoiceBar from './VoiceBar.svelte';
   import ScreenGrid from './ScreenGrid.svelte';
   import MembersSheet from './MembersSheet.svelte';
+  import InviteQrModal from './InviteQrModal.svelte';
 
   let { onSettings }: { onSettings: () => void } = $props();
 
   let copied = $state(false);
   let sidebarMinimized = $state(false);
   let membersOpen = $state(false);
+  let qrOpen = $state(false);
 
   const inviteUrl = $derived(
     session.room
@@ -134,6 +137,18 @@
       </button>
 
       <button
+        type="button"
+        onclick={() => (qrOpen = true)}
+        class="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-3"
+        title="Show invite QR code"
+        aria-label="Show invite QR code"
+      >
+        <Icon path={mdiQrcode} size={18} />
+        <span class="hidden sm:inline">QR</span>
+      </button>
+
+      <button
+        type="button"
         onclick={copyInvite}
         class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors {copied
           ? 'bg-success/20 text-success'
@@ -178,3 +193,10 @@
 </div>
 
 <MembersSheet open={membersOpen} onClose={() => (membersOpen = false)} />
+
+<InviteQrModal
+  open={qrOpen}
+  url={inviteUrl}
+  roomName={session.room?.name ?? 'Room'}
+  onClose={() => (qrOpen = false)}
+/>

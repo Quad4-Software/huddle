@@ -10,18 +10,18 @@ import (
 
 // Config holds server runtime settings.
 type Config struct {
-	Addr             string
-	InviteSecret     string
-	InviteTTL        time.Duration
-	MaxRoomSize      int
-	TrustProxy       bool
-	RateLimitWindow  time.Duration
-	RateLimitHTTP    int
-	RateLimitWS      int
-	RateLimitCreate  int
-	RateLimitJoin    int
-	PowDifficulty    int
-	PowTTL           time.Duration
+	Addr            string
+	InviteSecret    string
+	InviteTTL       time.Duration
+	MaxRoomSize     int
+	TrustProxy      bool
+	RateLimitWindow time.Duration
+	RateLimitHTTP   int
+	RateLimitWS     int
+	RateLimitCreate int
+	RateLimitJoin   int
+	PowDifficulty   int
+	PowTTL          time.Duration
 }
 
 // Load parses flags and environment variables into Config.

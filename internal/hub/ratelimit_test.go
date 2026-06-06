@@ -67,4 +67,3 @@ func TestHubRateLimitsJoin(t *testing.T) {
 		t.Fatalf("unexpected error: %s", payload.Message)
 	}
 }
-

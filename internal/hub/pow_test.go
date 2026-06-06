@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,7 +56,11 @@ func startTestHubWithPow(t *testing.T, maxSize int, store *pow.Store, difficulty
 			t.Errorf("upgrade failed: %v", err)
 			return
 		}
-		h.ServeClient(conn, r.RemoteAddr)
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		h.ServeClient(conn, host)
 	})
 
 	srv := httptest.NewServer(mux)

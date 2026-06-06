@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"net"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -51,21 +52,33 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case c := <-h.register:
-			h.mu.Lock()
-			if h.clients[c.RoomID] == nil {
-				h.clients[c.RoomID] = make(map[string]*Client)
-			}
-			h.clients[c.RoomID][c.ID] = c
-			h.mu.Unlock()
-			h.broadcastRoomState(c.RoomID)
-
+			h.safe(func() { h.registerClient(c) })
 		case c := <-h.unregister:
-			h.removeClient(c)
+			h.safe(func() { h.removeClient(c, false) })
 		}
 	}
 }
 
-func (h *Hub) removeClient(c *Client) {
+func (h *Hub) safe(fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("hub panic recovered: %v", r)
+		}
+	}()
+	fn()
+}
+
+func (h *Hub) registerClient(c *Client) {
+	h.mu.Lock()
+	if h.clients[c.RoomID] == nil {
+		h.clients[c.RoomID] = make(map[string]*Client)
+	}
+	h.clients[c.RoomID][c.ID] = c
+	h.mu.Unlock()
+	h.broadcastRoomState(c.RoomID)
+}
+
+func (h *Hub) removeClient(c *Client, keepRoom bool) {
 	shouldRemove := false
 	c.removed.Do(func() {
 		shouldRemove = true
@@ -93,10 +106,13 @@ func (h *Hub) removeClient(c *Client) {
 			}
 		}
 		h.broadcast(c.RoomID, TypePeerLeft, PeerLeftPayload{PeerID: c.ID}, c.ID)
+		h.reconcileRoomMembers(c.RoomID)
 		h.broadcastRoomState(c.RoomID)
-		h.rooms.RemoveIfEmpty(c.RoomID)
+		if !keepRoom {
+			h.rooms.RemoveIfEmpty(c.RoomID)
+		}
 	}
-	close(c.Send)
+	c.shutdown()
 }
 
 func (h *Hub) handleMessage(c *Client, data []byte) {
@@ -191,6 +207,10 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 	if err := h.verifyPow("join", p.Pow); err != nil {
 		c.SendError(err.Error())
 		return
+	}
+	if _, err := h.rooms.Get(p.RoomID); err == nil {
+		h.reconcileRoomMembers(p.RoomID)
+		h.removeStaleClients(p.RoomID, c.IP, p.Name)
 	}
 	r, err := h.rooms.ValidateJoin(p.RoomID, p.Invite, p.Password)
 	if err != nil {
@@ -319,15 +339,67 @@ func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string
 		return
 	}
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	targets := make([]*Client, 0, len(h.clients[roomID]))
 	for id, c := range h.clients[roomID] {
-		if id == except {
+		if id != except {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.RUnlock()
+	for _, c := range targets {
+		if !c.enqueue(data) {
+			log.Printf("drop message to %s", c.ID)
+		}
+	}
+}
+
+func (h *Hub) removeStaleClients(roomID, ip, name string) {
+	var stale []*Client
+	h.mu.RLock()
+	for _, c := range h.clients[roomID] {
+		if c.Name == name && sameClientIP(c.IP, ip) {
+			stale = append(stale, c)
+		}
+	}
+	h.mu.RUnlock()
+	for _, c := range stale {
+		h.removeClient(c, true)
+	}
+}
+
+func sameClientIP(a, b string) bool {
+	return clientHost(a) == clientHost(b)
+}
+
+func clientHost(ip string) string {
+	host, _, err := net.SplitHostPort(ip)
+	if err != nil {
+		return ip
+	}
+	return host
+}
+
+func (h *Hub) reconcileRoomMembers(roomID string) {
+	r, err := h.rooms.Get(roomID)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	active := h.clients[roomID]
+	activeIDs := make(map[string]struct{}, len(active))
+	for id := range active {
+		activeIDs[id] = struct{}{}
+	}
+	h.mu.RUnlock()
+
+	for _, m := range r.MemberList() {
+		if _, ok := activeIDs[m.ID]; ok {
 			continue
 		}
-		select {
-		case c.Send <- data:
-		default:
-			log.Printf("drop message to %s", id)
+		wasHost := r.IsHost(m.ID)
+		r.RemoveMember(m.ID)
+		if wasHost {
+			r.TransferHost(m.ID)
 		}
 	}
 }

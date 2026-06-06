@@ -27,6 +27,8 @@ type Client struct {
 	Conn          *websocket.Conn
 	Send          chan []byte
 	removed       sync.Once
+	sendMu        sync.Mutex
+	closed        bool
 }
 
 func (c *Client) readPump() {
@@ -78,14 +80,37 @@ func (c *Client) writePump() {
 	}
 }
 
+func (c *Client) enqueue(data []byte) bool {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.closed {
+		return false
+	}
+	select {
+	case c.Send <- data:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) shutdown() {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	close(c.Send)
+}
+
 func (c *Client) SendJSON(t MessageType, payload any) {
 	data, err := Marshal(t, payload)
 	if err != nil {
 		return
 	}
-	select {
-	case c.Send <- data:
-	default:
+	if !c.enqueue(data) {
+		log.Printf("drop message to %s", c.ID)
 	}
 }
 

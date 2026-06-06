@@ -23,7 +23,7 @@ func TestRateLimitBlocksWebSocketUpgrades(t *testing.T) {
 	}
 	srv := New(cfg)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 		rec := httptest.NewRecorder()
 		withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
@@ -46,7 +46,7 @@ func TestRateLimitSkipsHealthEndpoint(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

@@ -7,7 +7,7 @@ import (
 
 func TestLimiterAllowsUpToLimit(t *testing.T) {
 	l := New(3, time.Minute)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if !l.Allow("client") {
 			t.Fatalf("expected allow on attempt %d", i+1)
 		}
@@ -33,7 +33,7 @@ func TestLimiterResetsAfterWindow(t *testing.T) {
 
 func TestLimiterDisabledWhenLimitZero(t *testing.T) {
 	l := New(0, time.Minute)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if !l.Allow("client") {
 			t.Fatal("expected disabled limiter to always allow")
 		}

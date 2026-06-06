@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,7 +51,11 @@ func startTestHubWithLimits(t *testing.T, maxSize int, limits Limits) (string, *
 			t.Errorf("upgrade failed: %v", err)
 			return
 		}
-		h.ServeClient(conn, r.RemoteAddr)
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		h.ServeClient(conn, host)
 	})
 
 	srv := httptest.NewServer(mux)
@@ -264,7 +269,7 @@ func TestHubRenameBroadcasts(t *testing.T) {
 
 	host.send(TypeRename, RenamePayload{Name: "Hostess"})
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		msg := guest.readType(TypeRoomState)
 		var state struct {
 			Members []struct {

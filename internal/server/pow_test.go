@@ -57,3 +57,41 @@ func TestPowChallengeIssuesChallenge(t *testing.T) {
 		t.Fatalf("expected challenge fields, got %+v", body)
 	}
 }
+
+func TestPowChallengeTrailingSlash(t *testing.T) {
+	cfg := config.Config{
+		Addr:          ":0",
+		InviteSecret:  "test",
+		InviteTTL:     time.Hour,
+		MaxRoomSize:   4,
+		PowDifficulty: 12,
+		PowTTL:        time.Minute,
+	}
+	srv := New(cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pow/challenge/?action=join", nil)
+	rec := httptest.NewRecorder()
+	withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestUnknownAPIPathReturnsNotFound(t *testing.T) {
+	cfg := config.Config{
+		Addr:         ":0",
+		InviteSecret: "test",
+		InviteTTL:    time.Hour,
+		MaxRoomSize:  4,
+	}
+	srv := New(cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pow/?action=join", nil)
+	rec := httptest.NewRecorder()
+	withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}

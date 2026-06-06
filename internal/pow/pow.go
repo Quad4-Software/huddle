@@ -107,7 +107,7 @@ func Verify(prefix string, nonce uint64, difficulty int) bool {
 	if difficulty <= 0 {
 		return true
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", prefix, nonce)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%d", prefix, nonce))
 	return hasLeadingZeroBits(sum[:], difficulty)
 }
 
@@ -117,7 +117,7 @@ func hasLeadingZeroBits(hash []byte, bits int) bool {
 	}
 	fullBytes := bits / 8
 	remBits := bits % 8
-	for i := 0; i < fullBytes; i++ {
+	for i := range fullBytes {
 		if hash[i] != 0 {
 			return false
 		}

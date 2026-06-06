@@ -5,9 +5,10 @@ import (
 	"strings"
 )
 
-func withMiddleware(trustProxy bool, limits rateLimits, next http.Handler) http.Handler {
+func withMiddleware(trustProxy bool, corsOrigins []string, limits rateLimits, next http.Handler) http.Handler {
 	h := http.Handler(next)
 	h = limits.middleware(trustProxy, h)
+	h = corsMiddleware(corsOrigins, h)
 	h = securityHeaders(h)
 	if trustProxy {
 		h = trustProxyHeaders(h)
@@ -25,9 +26,28 @@ func normalizePath(next http.Handler) http.Handler {
 	})
 }
 
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"font-src 'self'; " +
+	"img-src 'self' blob: data:; " +
+	"media-src 'self' blob:; " +
+	"connect-src 'self' wss: ws:; " +
+	"worker-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+const permissionsPolicy = "microphone=(self), display-capture=(self), camera=()"
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		w.Header().Set("Permissions-Policy", permissionsPolicy)
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }

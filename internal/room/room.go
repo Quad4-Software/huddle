@@ -1,6 +1,7 @@
 package room
 
 import (
+	"crypto/subtle"
 	"sort"
 	"sync"
 	"time"
@@ -23,15 +24,16 @@ type Member struct {
 
 // Room holds membership and metadata for a single session.
 type Room struct {
-	ID         string
-	Name       string
-	Password   string
-	Invite     string
-	ExpiresAt  time.Time
-	HostPeerID string
-	Channels   []Channel
-	Members    map[string]*Member
-	mu         sync.RWMutex
+	ID           string
+	Name         string
+	Password     string
+	Invite       string
+	ExpiresAt    time.Time
+	HostPeerID   string
+	Channels     []Channel
+	Members      map[string]*Member
+	resumeTokens map[string]string
+	mu           sync.RWMutex
 }
 
 func New(id, name, password, invite string, expiresAt time.Time) *Room {
@@ -44,8 +46,20 @@ func New(id, name, password, invite string, expiresAt time.Time) *Room {
 		Channels: []Channel{
 			{ID: "general", Name: "general"},
 		},
-		Members: make(map[string]*Member),
+		Members:      make(map[string]*Member),
+		resumeTokens: make(map[string]string),
 	}
+}
+
+func (r *Room) GetMember(id string) (*Member, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.Members[id]
+	if !ok {
+		return nil, false
+	}
+	cp := *m
+	return &cp, true
 }
 
 func (r *Room) AddMember(id, name string) *Member {
@@ -60,6 +74,23 @@ func (r *Room) RemoveMember(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.Members, id)
+	delete(r.resumeTokens, id)
+}
+
+func (r *Room) SetResumeToken(peerID, token string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.resumeTokens[peerID] = token
+}
+
+func (r *Room) VerifyResumeToken(peerID, token string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stored, ok := r.resumeTokens[peerID]
+	if !ok || token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(token)) == 1
 }
 
 func (r *Room) MemberList() []Member {

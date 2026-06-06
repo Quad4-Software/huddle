@@ -4,9 +4,10 @@ package hub
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
-	"net"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -28,34 +29,39 @@ type Hub struct {
 	limits        Limits
 	pow           *pow.Store
 	powDifficulty int
+	iceProvider   func() []ICEServer
 	clients       map[string]map[string]*Client
 	mu            sync.RWMutex
-	register      chan *Client
 	unregister    chan *Client
 }
 
 // New returns a hub backed by room manager rm.
-func New(rm *room.Manager, limits Limits, powStore *pow.Store, powDifficulty int) *Hub {
+func New(
+	rm *room.Manager,
+	limits Limits,
+	powStore *pow.Store,
+	powDifficulty int,
+	iceProvider ...func() []ICEServer,
+) *Hub {
+	var provider func() []ICEServer
+	if len(iceProvider) > 0 {
+		provider = iceProvider[0]
+	}
 	return &Hub{
 		rooms:         rm,
 		limits:        limits,
 		pow:           powStore,
 		powDifficulty: powDifficulty,
+		iceProvider:   provider,
 		clients:       make(map[string]map[string]*Client),
-		register:      make(chan *Client),
 		unregister:    make(chan *Client),
 	}
 }
 
 // Run processes client registration and teardown until the process exits.
 func (h *Hub) Run() {
-	for {
-		select {
-		case c := <-h.register:
-			h.safe(func() { h.registerClient(c) })
-		case c := <-h.unregister:
-			h.safe(func() { h.removeClient(c, false) })
-		}
+	for c := range h.unregister {
+		h.safe(func() { h.removeClient(c, false, true) })
 	}
 }
 
@@ -73,12 +79,18 @@ func (h *Hub) registerClient(c *Client) {
 	if h.clients[c.RoomID] == nil {
 		h.clients[c.RoomID] = make(map[string]*Client)
 	}
-	h.clients[c.RoomID][c.ID] = c
+	roomClients := h.clients[c.RoomID]
+	for id, client := range roomClients {
+		if client == c && id != c.ID {
+			delete(roomClients, id)
+		}
+	}
+	roomClients[c.ID] = c
 	h.mu.Unlock()
-	h.broadcastRoomState(c.RoomID)
+	h.broadcastRoomState(c.RoomID, c.ID)
 }
 
-func (h *Hub) removeClient(c *Client, keepRoom bool) {
+func (h *Hub) removeClient(c *Client, keepRoom bool, notify bool) {
 	shouldRemove := false
 	c.removed.Do(func() {
 		shouldRemove = true
@@ -97,7 +109,7 @@ func (h *Hub) removeClient(c *Client, keepRoom bool) {
 	}
 	h.mu.Unlock()
 
-	if c.RoomID != "" {
+	if c.RoomID != "" && notify {
 		if r, err := h.rooms.Get(c.RoomID); err == nil {
 			wasHost := r.IsHost(c.ID)
 			r.RemoveMember(c.ID)
@@ -107,7 +119,7 @@ func (h *Hub) removeClient(c *Client, keepRoom bool) {
 		}
 		h.broadcast(c.RoomID, TypePeerLeft, PeerLeftPayload{PeerID: c.ID}, c.ID)
 		h.reconcileRoomMembers(c.RoomID)
-		h.broadcastRoomState(c.RoomID)
+		h.broadcastRoomState(c.RoomID, "")
 		if !keepRoom {
 			h.rooms.RemoveIfEmpty(c.RoomID)
 		}
@@ -148,14 +160,18 @@ func (h *Hub) handleMessage(c *Client, data []byte) {
 
 func (h *Hub) handleRename(c *Client, raw []byte) {
 	var p RenamePayload
-	if err := decodePayload(raw, &p); err != nil || p.Name == "" {
+	if err := decodePayload(raw, &p); err != nil {
 		return
 	}
-	c.Name = p.Name
-	if r, err := h.rooms.Get(c.RoomID); err == nil {
-		r.RenameMember(c.ID, p.Name)
+	name, ok := cleanBounded(p.Name, MaxDisplayNameLength)
+	if !ok {
+		return
 	}
-	h.broadcastRoomState(c.RoomID)
+	c.Name = name
+	if r, err := h.rooms.Get(c.RoomID); err == nil {
+		r.RenameMember(c.ID, name)
+	}
+	h.broadcastRoomState(c.RoomID, "")
 }
 
 func (h *Hub) handlePing(c *Client, raw []byte) {
@@ -172,7 +188,12 @@ func (h *Hub) handleCreate(c *Client, raw []byte) {
 		return
 	}
 	var p CreateRoomPayload
-	if err := decodePayload(raw, &p); err != nil || p.Name == "" {
+	if err := decodePayload(raw, &p); err != nil {
+		c.SendError("invalid create request")
+		return
+	}
+	name, ok := cleanBounded(p.Name, MaxRoomNameLength)
+	if !ok || !validateOptionalBounded(p.Password, MaxPasswordLength) {
 		c.SendError("invalid create request")
 		return
 	}
@@ -180,13 +201,13 @@ func (h *Hub) handleCreate(c *Client, raw []byte) {
 		c.SendError(err.Error())
 		return
 	}
-	result, err := h.rooms.Create(room.CreateInput{Name: p.Name, Password: p.Password})
+	result, err := h.rooms.Create(room.CreateInput{Name: name, Password: p.Password})
 	if err != nil {
 		c.SendError("failed to create room")
 		return
 	}
 	c.CreatedRoomID = result.RoomID
-	c.SendJSON(TypeCreated, CreatedPayload{
+	c.sendCriticalJSON(TypeCreated, CreatedPayload{
 		RoomID:    result.RoomID,
 		Invite:    result.Invite,
 		RoomKey:   result.RoomKey,
@@ -200,7 +221,12 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 		return
 	}
 	var p JoinPayload
-	if err := decodePayload(raw, &p); err != nil || p.RoomID == "" || p.Invite == "" || p.Name == "" {
+	if err := decodePayload(raw, &p); err != nil {
+		c.SendError("invalid join request")
+		return
+	}
+	name, ok := cleanBounded(p.Name, MaxDisplayNameLength)
+	if !ok || p.RoomID == "" || p.Invite == "" || !validateOptionalBounded(p.Password, MaxPasswordLength) {
 		c.SendError("invalid join request")
 		return
 	}
@@ -210,7 +236,6 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 	}
 	if _, err := h.rooms.Get(p.RoomID); err == nil {
 		h.reconcileRoomMembers(p.RoomID)
-		h.removeStaleClients(p.RoomID, c.IP, p.Name)
 	}
 	r, err := h.rooms.ValidateJoin(p.RoomID, p.Invite, p.Password)
 	if err != nil {
@@ -218,33 +243,76 @@ func (h *Hub) handleJoin(c *Client, raw []byte) {
 		return
 	}
 
-	peerID, err := newPeerID()
+	peerID := strings.TrimSpace(p.ResumePeerID)
+	resumeToken := strings.TrimSpace(p.ResumeToken)
+	resuming := false
+	if peerID != "" {
+		if !r.VerifyResumeToken(peerID, resumeToken) {
+			peerID = ""
+		} else if _, ok := r.GetMember(peerID); ok {
+			h.disconnectPeer(p.RoomID, peerID, true, false)
+			resuming = true
+		} else {
+			peerID = ""
+		}
+	}
+	if peerID == "" {
+		peerID, err = newPeerID()
+		if err != nil {
+			c.SendError("failed to join room")
+			return
+		}
+		r.AddMember(peerID, name)
+		if p.RoomID == c.CreatedRoomID && r.HostID() == "" {
+			r.SetHost(peerID)
+		}
+	} else {
+		r.RenameMember(peerID, name)
+	}
+
+	if c.RoomID == p.RoomID && c.ID != "" && c.ID != peerID {
+		if stale, err := h.rooms.Get(p.RoomID); err == nil {
+			stale.RemoveMember(c.ID)
+		}
+		h.mu.Lock()
+		if roomClients := h.clients[p.RoomID]; roomClients != nil {
+			delete(roomClients, c.ID)
+		}
+		h.mu.Unlock()
+	}
+
+	c.ID = peerID
+	c.RoomID = p.RoomID
+	c.Name = name
+
+	resumeToken, err = newResumeToken()
 	if err != nil {
 		c.SendError("failed to join room")
 		return
 	}
-	c.ID = peerID
-	c.RoomID = p.RoomID
-	c.Name = p.Name
-	r.AddMember(c.ID, p.Name)
-	if p.RoomID == c.CreatedRoomID && r.HostID() == "" {
-		r.SetHost(c.ID)
-	}
+	r.SetResumeToken(peerID, resumeToken)
 
-	h.register <- c
+	h.registerClient(c)
+	h.reconcileRoomMembers(c.RoomID)
 
 	peers := h.peerIDs(c.RoomID, c.ID)
-	c.SendJSON(TypeJoined, JoinedPayload{
-		PeerID: c.ID,
-		Room:   r.Snapshot(),
-		Peers:  peers,
+	c.sendCriticalJSON(TypeJoined, JoinedPayload{
+		PeerID:      c.ID,
+		ResumeToken: resumeToken,
+		Room:        r.Snapshot(),
+		Peers:       peers,
+		ICEServers:  h.iceServers(),
 	})
-	h.broadcast(c.RoomID, TypePeerJoined, PeerJoinedPayload{PeerID: c.ID}, c.ID)
+	if !resuming {
+		h.broadcast(c.RoomID, TypePeerJoined, PeerJoinedPayload{PeerID: c.ID}, c.ID)
+	} else {
+		h.broadcastRoomState(c.RoomID, "")
+	}
 }
 
 func (h *Hub) handleSignal(c *Client, msg Message) {
 	var p SignalPayload
-	if err := decodePayload(msg.Payload, &p); err != nil || p.To == "" {
+	if err := decodePayload(msg.Payload, &p); err != nil || !validSignal(msg.Type, p) {
 		return
 	}
 	p.From = c.ID
@@ -297,7 +365,7 @@ func (h *Hub) handleKick(c *Client, raw []byte) {
 		return
 	}
 
-	target.SendJSON(TypeKicked, nil)
+	target.sendCriticalJSON(TypeKicked, nil)
 	h.unregister <- target
 }
 
@@ -316,21 +384,54 @@ func (h *Hub) verifyPow(action string, payload *PowPayload) error {
 
 func (h *Hub) handleAddChannel(c *Client, raw []byte) {
 	var p AddChannelPayload
-	if err := decodePayload(raw, &p); err != nil || p.ID == "" || p.Name == "" {
+	if err := decodePayload(raw, &p); err != nil {
 		return
 	}
-	if r, err := h.rooms.Get(c.RoomID); err == nil {
-		r.AddChannel(p.ID, p.Name)
+	id, okID := cleanBounded(p.ID, MaxChannelIDLength)
+	name, okName := cleanBounded(p.Name, MaxChannelNameLength)
+	if !okID || !okName {
+		return
 	}
-	h.broadcastRoomState(c.RoomID)
+	r, err := h.rooms.Get(c.RoomID)
+	if err != nil || !r.IsHost(c.ID) {
+		return
+	}
+	r.AddChannel(id, name)
+	h.broadcastRoomState(c.RoomID, "")
 }
 
-func (h *Hub) broadcastRoomState(roomID string) {
+func (h *Hub) iceServers() []ICEServer {
+	if h.iceProvider == nil {
+		return nil
+	}
+	return h.iceProvider()
+}
+
+func validSignal(t MessageType, p SignalPayload) bool {
+	if p.To == "" || p.Nonce == "" || p.Sig == "" ||
+		len(p.Nonce) > MaxSignalNonceLength || len(p.Sig) > MaxSignalSigLength {
+		return false
+	}
+	switch t {
+	case TypeOffer, TypeAnswer:
+		return p.SDP != "" && len(p.SDP) <= MaxSDPLength
+	case TypeICE:
+		if p.Candidate == nil {
+			return false
+		}
+		b, err := json.Marshal(p.Candidate)
+		return err == nil && len(b) <= MaxCandidateLength
+	default:
+		return false
+	}
+}
+
+func (h *Hub) broadcastRoomState(roomID, except string) {
 	r, err := h.rooms.Get(roomID)
 	if err != nil {
 		return
 	}
-	h.broadcast(roomID, TypeRoomState, r.Snapshot(), "")
+	h.broadcast(roomID, TypeRoomState, r.Snapshot(), except)
 }
 
 func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string) {
@@ -353,30 +454,13 @@ func (h *Hub) broadcast(roomID string, t MessageType, payload any, except string
 	}
 }
 
-func (h *Hub) removeStaleClients(roomID, ip, name string) {
-	var stale []*Client
+func (h *Hub) disconnectPeer(roomID, peerID string, keepRoom, notify bool) {
 	h.mu.RLock()
-	for _, c := range h.clients[roomID] {
-		if c.Name == name && sameClientIP(c.IP, ip) {
-			stale = append(stale, c)
-		}
-	}
+	c := h.clients[roomID][peerID]
 	h.mu.RUnlock()
-	for _, c := range stale {
-		h.removeClient(c, true)
+	if c != nil {
+		h.removeClient(c, keepRoom, notify)
 	}
-}
-
-func sameClientIP(a, b string) bool {
-	return clientHost(a) == clientHost(b)
-}
-
-func clientHost(ip string) string {
-	host, _, err := net.SplitHostPort(ip)
-	if err != nil {
-		return ip
-	}
-	return host
 }
 
 func (h *Hub) reconcileRoomMembers(roomID string) {
@@ -424,13 +508,21 @@ func newPeerID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+func newResumeToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // ServeClient handles a WebSocket connection until it closes.
 func (h *Hub) ServeClient(conn *websocket.Conn, ip string) {
 	c := &Client{
 		Hub:  h,
 		Conn: conn,
 		IP:   ip,
-		Send: make(chan []byte, 64),
+		Send: make(chan []byte, 256),
 	}
 	go c.writePump()
 	c.readPump()

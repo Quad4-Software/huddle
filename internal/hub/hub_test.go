@@ -190,7 +190,7 @@ func TestHubJoinRejectsInvalidPassword(t *testing.T) {
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Message != "invalid password" {
+	if payload.Message != "unable to join room" {
 		t.Fatalf("unexpected error: %s", payload.Message)
 	}
 }
@@ -219,8 +219,10 @@ func TestHubRelaysSignalBetweenPeers(t *testing.T) {
 	_ = host.readType(TypePeerJoined)
 
 	host.send(TypeOffer, SignalPayload{
-		To:  guestJoined.PeerID,
-		SDP: "v=0",
+		To:    guestJoined.PeerID,
+		SDP:   "v=0",
+		Nonce: "nonce",
+		Sig:   "sig",
 	})
 
 	msg := guest.readType(TypeOffer)
@@ -228,7 +230,7 @@ func TestHubRelaysSignalBetweenPeers(t *testing.T) {
 	if err := json.Unmarshal(msg.Payload, &relayed); err != nil {
 		t.Fatal(err)
 	}
-	if relayed.From != hostJoined.PeerID || relayed.SDP != "v=0" {
+	if relayed.From != hostJoined.PeerID || relayed.SDP != "v=0" || relayed.Nonce != "nonce" || relayed.Sig != "sig" {
 		t.Fatalf("unexpected relayed offer: %+v", relayed)
 	}
 }

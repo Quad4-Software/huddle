@@ -114,8 +114,25 @@ func (c *Client) SendJSON(t MessageType, payload any) {
 	}
 }
 
+func (c *Client) sendCriticalJSON(t MessageType, payload any) {
+	data, err := Marshal(t, payload)
+	if err != nil {
+		return
+	}
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.closed {
+		return
+	}
+	select {
+	case c.Send <- data:
+	case <-time.After(5 * time.Second):
+		log.Printf("critical send timeout to %s", c.ID)
+	}
+}
+
 func (c *Client) SendError(msg string) {
-	c.SendJSON(TypeError, ErrorPayload{Message: msg})
+	c.sendCriticalJSON(TypeError, ErrorPayload{Message: msg})
 }
 
 func decodePayload[T any](raw json.RawMessage, out *T) error {

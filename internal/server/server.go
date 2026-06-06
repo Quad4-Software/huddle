@@ -14,39 +14,48 @@ import (
 	"huddle/internal/pow"
 	"huddle/internal/ratelimit"
 	"huddle/internal/room"
+	"huddle/internal/turnserver"
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 // Server is the HTTP front end for Huddle.
 type Server struct {
-	cfg    config.Config
-	hub    *hub.Hub
-	mux    *http.ServeMux
-	limits rateLimits
-	pow    *powHandler
+	cfg      config.Config
+	hub      *hub.Hub
+	mux      *http.ServeMux
+	limits   rateLimits
+	pow      *powHandler
+	upgrader websocket.Upgrader
+	turn     *turnserver.Server
 }
 
 // New constructs a server from cfg and starts the signaling hub.
 func New(cfg config.Config) *Server {
-	rm := room.NewManager(cfg.InviteSecret, cfg.InviteTTL, cfg.MaxRoomSize)
+	rm := room.NewManager(cfg.InviteSecret, cfg.InviteTTL, cfg.MaxRoomSize, cfg.MaxRooms)
 	powStore := pow.NewStore()
 	limits := hub.Limits{
 		Create: ratelimit.New(cfg.RateLimitCreate, cfg.RateLimitWindow),
 		Join:   ratelimit.New(cfg.RateLimitJoin, cfg.RateLimitWindow),
 	}
-	h := hub.New(rm, limits, powStore, cfg.PowDifficulty)
+	h := hub.New(rm, limits, powStore, cfg.PowDifficulty, func() []hub.ICEServer {
+		if !cfg.TURNEnabled {
+			return nil
+		}
+		ice, err := turnserver.NewICEServer(turnConfig(cfg))
+		if err != nil {
+			return nil
+		}
+		return []hub.ICEServer{{
+			URLs:       ice.URLs,
+			Username:   ice.Username,
+			Credential: ice.Credential,
+		}}
+	})
 	go h.Run()
 
 	rl := newRateLimits(cfg.RateLimitHTTP, cfg.RateLimitWS, cfg.RateLimitWindow)
-	startRateLimitCleanup(cfg.RateLimitWindow, rl.http, rl.ws, limits.Create, limits.Join, powStore)
+	startRateLimitCleanup(cfg.RateLimitWindow, rl.http, rl.ws, limits.Create, limits.Join, powStore, rm)
 
+	allowedOrigins := cfg.CORSOrigins
 	s := &Server{
 		cfg:    cfg,
 		hub:    h,
@@ -56,6 +65,13 @@ func New(cfg config.Config) *Server {
 			store:      powStore,
 			difficulty: cfg.PowDifficulty,
 			ttl:        cfg.PowTTL,
+		},
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  4096,
+			WriteBufferSize: 4096,
+			CheckOrigin: func(r *http.Request) bool {
+				return originAllowed(r, r.Header.Get("Origin"), allowedOrigins)
+			},
 		},
 	}
 	s.routes()
@@ -75,7 +91,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade: %v", err)
 		return
@@ -89,11 +105,30 @@ func (s *Server) ListenAndServe() error {
 	if s.cfg.TrustProxy {
 		log.Printf("trusting reverse-proxy forwarded headers")
 	}
+	if s.cfg.TURNEnabled {
+		turnSrv, err := turnserver.Start(turnConfig(s.cfg))
+		if err != nil {
+			return err
+		}
+		s.turn = turnSrv
+		defer s.turn.Close()
+		log.Printf("built-in TURN listening on %s", s.cfg.TURNListenAddr)
+	}
 	srv := &http.Server{
 		Addr:              s.cfg.Addr,
-		Handler:           withMiddleware(s.cfg.TrustProxy, s.limits, s.mux),
+		Handler:           withMiddleware(s.cfg.TrustProxy, s.cfg.CORSOrigins, s.limits, s.mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+func turnConfig(cfg config.Config) turnserver.Config {
+	return turnserver.Config{
+		ListenAddr: cfg.TURNListenAddr,
+		PublicAddr: cfg.TURNPublicAddr,
+		Realm:      cfg.TURNRealm,
+		Secret:     cfg.InviteSecret,
+		CredTTL:    cfg.TURNCredTTL,
+	}
 }

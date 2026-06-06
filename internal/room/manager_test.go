@@ -4,8 +4,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"huddle/internal/auth"
 )
 
 func TestManagerCreateAndJoin(t *testing.T) {
@@ -36,8 +34,8 @@ func TestManagerJoinRequiresPassword(t *testing.T) {
 	}
 
 	_, err = m.ValidateJoin(result.RoomID, result.Invite, "")
-	if err == nil || err.Error() != "invalid password" {
-		t.Fatalf("expected invalid password, got %v", err)
+	if !errors.Is(err, ErrJoinDenied) {
+		t.Fatalf("expected join denied, got %v", err)
 	}
 
 	room, err := m.ValidateJoin(result.RoomID, result.Invite, "secret")
@@ -57,8 +55,11 @@ func TestManagerJoinRejectsBadInvite(t *testing.T) {
 	}
 
 	_, err = m.ValidateJoin(result.RoomID, "bad.token.value", "")
-	if !errors.Is(err, auth.ErrInvalidInvite) {
-		t.Fatalf("expected invalid invite, got %v", err)
+	if !errors.Is(err, ErrJoinDenied) {
+		t.Fatalf("expected join denied, got %v", err)
+	}
+	if _, err := m.Get(result.RoomID); err != nil {
+		t.Fatal("expected room to remain after invalid invite")
 	}
 }
 
@@ -76,8 +77,8 @@ func TestManagerEnforcesRoomCapacity(t *testing.T) {
 	room.AddMember("peer-1", "One")
 
 	_, err = m.ValidateJoin(result.RoomID, result.Invite, "")
-	if !errors.Is(err, ErrRoomFull) {
-		t.Fatalf("expected room full, got %v", err)
+	if !errors.Is(err, ErrJoinDenied) {
+		t.Fatalf("expected join denied, got %v", err)
 	}
 }
 

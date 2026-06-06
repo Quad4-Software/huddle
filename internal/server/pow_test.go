@@ -71,7 +71,7 @@ func TestPowChallengeTrailingSlash(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pow/challenge/?action=join", nil)
 	rec := httptest.NewRecorder()
-	withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+	withMiddleware(false, nil, srv.limits, srv.mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -89,7 +89,7 @@ func TestUnknownAPIPathReturnsNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pow/?action=join", nil)
 	rec := httptest.NewRecorder()
-	withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+	withMiddleware(false, nil, srv.limits, srv.mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)

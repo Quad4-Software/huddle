@@ -49,7 +49,7 @@ func TestHubRateLimitsJoin(t *testing.T) {
 		Invite: created.Invite,
 		Name:   "Host",
 	})
-	if client.read().Type != TypeJoined {
+	if client.readType(TypeJoined).Type != TypeJoined {
 		t.Fatal("expected first join to succeed")
 	}
 

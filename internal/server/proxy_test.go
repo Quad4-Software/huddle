@@ -25,3 +25,27 @@ func TestTrustProxyHeaders(t *testing.T) {
 		t.Fatalf("expected forwarded host, got %q", gotHost)
 	}
 }
+
+func TestSecurityHeaders(t *testing.T) {
+	var served bool
+	h := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		served = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if !served {
+		t.Fatal("expected request to reach handler")
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != contentSecurityPolicy {
+		t.Fatalf("unexpected CSP: %q", got)
+	}
+	if got := rec.Header().Get("Permissions-Policy"); got != permissionsPolicy {
+		t.Fatalf("unexpected permissions policy: %q", got)
+	}
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options DENY, got %q", got)
+	}
+}

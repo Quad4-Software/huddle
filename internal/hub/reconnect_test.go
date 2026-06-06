@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 )
@@ -21,14 +20,16 @@ func TestHubRefreshReplacesSameIPConnection(t *testing.T) {
 
 	second := dialClient(t, url)
 	second.send(TypeJoin, JoinPayload{
-		RoomID: created.RoomID,
-		Invite: created.Invite,
-		Name:   "Dave",
+		RoomID:       created.RoomID,
+		Invite:       created.Invite,
+		Name:         "Dave",
+		ResumePeerID: firstJoined.PeerID,
+		ResumeToken:  firstJoined.ResumeToken,
 	})
 	secondJoined := second.readJoined()
 
-	if secondJoined.PeerID == firstJoined.PeerID {
-		t.Fatal("expected refresh to issue a new peer id")
+	if secondJoined.PeerID != firstJoined.PeerID {
+		t.Fatalf("expected resume to keep peer id, got %s then %s", firstJoined.PeerID, secondJoined.PeerID)
 	}
 
 	time.Sleep(50 * time.Millisecond)
@@ -41,7 +42,7 @@ func TestHubRefreshReplacesSameIPConnection(t *testing.T) {
 		t.Fatalf("expected 1 member after refresh, got %d", r.Size())
 	}
 	for _, m := range r.MemberList() {
-		if m.ID != secondJoined.PeerID {
+		if m.ID != firstJoined.PeerID {
 			t.Fatalf("expected only refreshed peer, got %+v", m)
 		}
 	}
@@ -77,28 +78,25 @@ func TestHubJoinDoesNotDuplicateMembersForHostAndGuest(t *testing.T) {
 		t.Fatalf("expected 2 members, got %d", r.Size())
 	}
 
-	msg := host.readType(TypeRoomState)
-	var state struct {
-		Members []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"members"`
-	}
-	if err := json.Unmarshal(msg.Payload, &state); err != nil {
-		t.Fatal(err)
-	}
-	if len(state.Members) != 2 {
-		t.Fatalf("expected 2 members in room state, got %d", len(state.Members))
+	members, ok := guestJoined.Room["members"].([]any)
+	if !ok || len(members) != 2 {
+		t.Fatalf("expected 2 members in joined snapshot, got %+v", guestJoined.Room["members"])
 	}
 
 	ids := map[string]bool{guestJoined.PeerID: true}
-	for _, m := range state.Members {
-		if m.Name == "Dave" {
-			ids[m.ID] = true
+	for _, raw := range members {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected member shape: %+v", raw)
+		}
+		name, _ := m["name"].(string)
+		id, _ := m["id"].(string)
+		if name == "Dave" {
+			ids[id] = true
 		}
 	}
 	if len(ids) != 2 {
-		t.Fatalf("expected distinct host and guest ids, got %+v", state.Members)
+		t.Fatalf("expected distinct host and guest ids, got %+v", members)
 	}
 }
 
@@ -123,8 +121,8 @@ func TestHubBroadcastSurvivesDisconnectRace(t *testing.T) {
 			Name:   "Guest",
 		})
 		client.readJoined()
-		_ = client.conn.Close()
 		host.readType(TypePeerJoined)
+		_ = client.conn.Close()
 	}
 
 	time.Sleep(100 * time.Millisecond)

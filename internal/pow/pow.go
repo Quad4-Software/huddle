@@ -11,11 +11,14 @@ import (
 	"time"
 )
 
+const defaultMaxChallenges = 4096
+
 var (
 	ErrChallengeNotFound = errors.New("challenge not found")
 	ErrChallengeExpired  = errors.New("challenge expired")
 	ErrInvalidSolution   = errors.New("invalid proof of work")
 	ErrInvalidAction     = errors.New("invalid challenge action")
+	ErrTooManyChallenges = errors.New("too many pending challenges")
 )
 
 // Challenge is a single-use proof-of-work puzzle.
@@ -31,11 +34,15 @@ type Challenge struct {
 type Store struct {
 	mu         sync.Mutex
 	challenges map[string]Challenge
+	max        int
 }
 
 // NewStore returns an empty challenge store.
 func NewStore() *Store {
-	return &Store{challenges: make(map[string]Challenge)}
+	return &Store{
+		challenges: make(map[string]Challenge),
+		max:        defaultMaxChallenges,
+	}
 }
 
 // Issue creates a challenge for action with the given difficulty and lifetime.
@@ -62,8 +69,11 @@ func (s *Store) Issue(action string, difficulty int, ttl time.Duration) (Challen
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.max > 0 && len(s.challenges) >= s.max {
+		return Challenge{}, ErrTooManyChallenges
+	}
 	s.challenges[ch.ID] = ch
-	s.mu.Unlock()
 	return ch, nil
 }
 

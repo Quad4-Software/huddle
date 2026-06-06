@@ -49,12 +49,20 @@ type CreatedPayload struct {
 	ExpiresAt int64  `json:"expiresAt"`
 }
 
+type ICEServer struct {
+	URLs       []string `json:"urls"`
+	Username   string   `json:"username,omitempty"`
+	Credential string   `json:"credential,omitempty"`
+}
+
 type JoinPayload struct {
-	RoomID   string      `json:"roomId"`
-	Invite   string      `json:"invite"`
-	Password string      `json:"password,omitempty"`
-	Name     string      `json:"name"`
-	Pow      *PowPayload `json:"pow,omitempty"`
+	RoomID       string      `json:"roomId"`
+	Invite       string      `json:"invite"`
+	Password     string      `json:"password,omitempty"`
+	Name         string      `json:"name"`
+	ResumePeerID string      `json:"resumePeerId,omitempty"`
+	ResumeToken  string      `json:"resumeToken,omitempty"`
+	Pow          *PowPayload `json:"pow,omitempty"`
 }
 
 type KickPayload struct {
@@ -66,9 +74,11 @@ type PeerLeftPayload struct {
 }
 
 type JoinedPayload struct {
-	PeerID string         `json:"peerId"`
-	Room   map[string]any `json:"room"`
-	Peers  []string       `json:"peers"`
+	PeerID      string         `json:"peerId"`
+	ResumeToken string         `json:"resumeToken"`
+	Room        map[string]any `json:"room"`
+	Peers       []string       `json:"peers"`
+	ICEServers  []ICEServer    `json:"iceServers,omitempty"`
 }
 
 type SignalPayload struct {
@@ -76,6 +86,8 @@ type SignalPayload struct {
 	From      string `json:"from,omitempty"`
 	SDP       string `json:"sdp,omitempty"`
 	Candidate any    `json:"candidate,omitempty"`
+	Nonce     string `json:"nonce,omitempty"`
+	Sig       string `json:"sig,omitempty"`
 }
 
 type MemberUpdatePayload struct {

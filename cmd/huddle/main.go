@@ -19,6 +19,9 @@ func main() {
 	}
 
 	cfg := config.Load()
+	if err := config.Validate(cfg); err != nil {
+		log.Fatal(err)
+	}
 	srv := server.New(cfg)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)

@@ -26,7 +26,7 @@ func TestRateLimitBlocksWebSocketUpgrades(t *testing.T) {
 	for i := range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 		rec := httptest.NewRecorder()
-		withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+		withMiddleware(false, nil, srv.limits, srv.mux).ServeHTTP(rec, req)
 		if rec.Code == http.StatusTooManyRequests {
 			t.Fatalf("expected upgrade attempt %d to pass, got 429", i+1)
 		}
@@ -34,7 +34,7 @@ func TestRateLimitBlocksWebSocketUpgrades(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	rec := httptest.NewRecorder()
-	withMiddleware(false, srv.limits, srv.mux).ServeHTTP(rec, req)
+	withMiddleware(false, nil, srv.limits, srv.mux).ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", rec.Code)
 	}
